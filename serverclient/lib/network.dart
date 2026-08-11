@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ffi';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -12,6 +11,10 @@ class ServerPipe {
   Stream<Uint8List>? dataStream;
   ConnectivityStatus _connectivityStatus = ConnectivityStatus.disconnected;
   String? errorMessage;
+  String? host;
+  int? port;
+
+  String _authorization = "";
   final List<ConnectivityListener> _connectivityListeners = [];
 
   Future<void> connect({required String host, required int port}) async {
@@ -26,8 +29,14 @@ class ServerPipe {
     _setConnectivity(ConnectivityStatus.connected);
     socket!.listen(
       null,
-      onDone: () => _setConnectivity(ConnectivityStatus.disconnected),
+      onDone: () {
+        _setConnectivity(ConnectivityStatus.disconnected);
+        this.host = null;
+        this.port = null;
+      },
     );
+    this.host = host;
+    this.port = port;
   }
 
   ConnectivityStatus get connectivity {
@@ -52,11 +61,18 @@ class ServerPipe {
     socket!.write(data);
   }
 
-  void httpGET(String url) {
-    write("GET $url HTTP/1.1");
+  void httpGET(String url, {bool keepAlive = false}) {
+    String requestLine = "GET $url HTTP/1.1";
+    String hostHTTP = "HOST: $host:$port";
+    String connection = "Connection: ${keepAlive ? "keep-alive" : "close"}";
+    write("$requestLine\r\n$hostHTTP\r\n$connection\r\n");
   }
 
   void drop() async {
     await socket!.close();
+  }
+
+  void setAuthorization(String data) {
+    _authorization = data;
   }
 }

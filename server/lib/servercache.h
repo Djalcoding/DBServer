@@ -78,7 +78,6 @@ class ServerCache {
         while (curr) {
             delete prev;
             prev = curr;
-            curr->next;
         } 
         delete prev;
     }

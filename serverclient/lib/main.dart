@@ -46,7 +46,7 @@ class HomePageState extends State<HomePage> {
   final ServerPipe pipe;
   ServerPage _page;
   String targetHost = "";
-  int targetPort = 0;
+  int targetPort = 80;
   ConnectivityStatus _connectivityStatus;
   bool _isEnglish = true;
   final ScaffoldKey _scaffoldKey = ScaffoldKey();
@@ -153,7 +153,8 @@ class HomePageState extends State<HomePage> {
     double size = 0.8,
     bool bottom = false,
   }) {
-    double widthCompoment = MediaQuery.of(context).size.width / 800 * size;
+    MediaQueryData media = MediaQuery.of(context);
+    double scaling = (media.size.width / 500).clamp(0.85, 1.6) * size;
     Color color = Theme.of(context).colorScheme.onSurfaceVariant;
     return Expanded(
       child: Container(
@@ -182,12 +183,9 @@ class HomePageState extends State<HomePage> {
           ),
           child: Row(
             children: [
-              Text(
-                title,
-                style: TextStyle(fontSize: min(35, 35 * widthCompoment)),
-              ),
+              Text(title, style: TextStyle(fontSize: 25 * scaling)),
               Expanded(child: Container()),
-              Icon(icon, size: min(35, 38 * widthCompoment)),
+              Icon(icon, size: 30 * scaling),
             ],
           ),
         ),
@@ -196,7 +194,7 @@ class HomePageState extends State<HomePage> {
   }
 
   bool get connectedToServer {
-      return _connectivityStatus == ConnectivityStatus.connected;
+    return _connectivityStatus == ConnectivityStatus.connected;
   }
 
   void setLanguage(bool status) {

@@ -8,30 +8,40 @@
 #include <unistd.h>
 
 Client::Client(Client &&moved)
-    : file_descriptor(moved.file_descriptor), log_header(std::move(moved.log_header)),
-      write_buffer(std::move(moved.write_buffer)) {
+    : file_descriptor(moved.file_descriptor),
+      log_header(std::move(moved.log_header)),
+      write_buffer(std::move(moved.write_buffer)), timeout(moved.timeout),
+      last_packet_timestamp(moved.last_packet_timestamp) {
     moved.file_descriptor = -1;
 }
 Client &Client::operator=(Client &&moved) {
     file_descriptor = moved.file_descriptor;
     write_buffer = std::move(moved.write_buffer);
+    log_header = std::move(moved.log_header);
+    timeout = moved.timeout;
+    last_packet_timestamp = moved.last_packet_timestamp;
+
     moved.file_descriptor = -1;
-    moved.write_buffer.clear();
+
     return *this;
 }
 
 std::string Client::read_available() {
-    ssize_t     available_bytes = available();
+    ssize_t available_bytes = available();
     std::string buffer(available_bytes, '\0');
     read_n(available_bytes, buffer.data());
     return buffer;
 }
 ssize_t Client::read_n(ssize_t n, byte_t *buffer) {
-    Logger::getInstance()->push({log_header, std::format("Asking client to send (read operation) {} bytes ", n)});
+    Logger::getInstance()->push(
+        {log_header,
+         std::format("Asking client to send (read operation) {} bytes ", n)});
     ssize_t out = read(file_descriptor, buffer, n);
     if (out == -1) {
         throw std::runtime_error("could not read file descriptor");
-    }
+    } else if (out != 0)
+        last_packet_timestamp = clock::now();
+
     return out;
 }
 
@@ -42,13 +52,15 @@ bool Client::wait_for_data(int timeout) const {
     return poll(&pfd, 1, timeout) > 0;
 }
 std::string Client::peek_available() const {
-    ssize_t     available_bytes = available();
+    ssize_t available_bytes = available();
     std::string buffer(available_bytes, '\0');
     peek_n(available_bytes, buffer.data());
     return buffer;
 }
 ssize_t Client::peek_n(ssize_t n, byte_t *buffer) const {
-    Logger::getInstance()->push({log_header, std::format("Asking client to show (peek operation) {} bytes ", n)});
+    Logger::getInstance()->push(
+        {log_header,
+         std::format("Asking client to show (peek operation) {} bytes ", n)});
     ssize_t out = recv(file_descriptor, buffer, n, MSG_PEEK);
     if (out == -1) // TODO : multiple tries
         throw std::runtime_error("could not read file descriptor");
@@ -56,7 +68,8 @@ ssize_t Client::peek_n(ssize_t n, byte_t *buffer) const {
 }
 
 void Client::close() {
-        ::close(file_descriptor);
+    ::shutdown(file_descriptor, SHUT_WR);
+    ::close(file_descriptor);
 }
 ssize_t Client::available() const {
     ssize_t available_bytes = 0;
@@ -72,21 +85,23 @@ void Client::write(std::string_view input) {
             // TODO: Multiple attempts
             Logger::getInstance()->push(
                 {log_header,
-                 std::format("Failed in writing {} bytes from packet, {} bytes remaining", w, remaining_bytes),
+                 std::format("Failed in writing {} bytes from packet, {} bytes "
+                             "remaining",
+                             w, remaining_bytes),
                  Logger::LogLevel::WAR});
-            throw std::runtime_error("failed to write");
+            return;
         } else {
             remaining_bytes -= w;
         }
-        Logger::getInstance()->push({log_header, std::format("sent {} byte packet", w, input.size())});
+        Logger::getInstance()->push(
+            {log_header, std::format("sent {} byte packet", w, input.size())});
     }
 }
-void Client::write_http(std::string_view response_type, std::string_view contents) {
+void Client::write_http(std::string_view response_type,
+                        std::string_view contents) {
     *this << "HTTP/1.1 " << response_type << "\r\n"
-           << "Content-Length: " << std::to_string(contents.size()) << "\r\n"
-           << "Connection : close\r\n"
-           << "\r\n"
-           << contents << Client::flush;
-
-    write(stream.str());
+          << "Content-Length: " << std::to_string(contents.size()) << "\r\n"
+          << "Connection : close\r\n"
+          << "\r\n"
+          << contents << Client::flush;
 }

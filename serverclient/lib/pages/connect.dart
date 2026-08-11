@@ -23,7 +23,8 @@ Widget buildHostInput(HomePageState state, {double spacing = 20}) {
       SizedBox(width: spacing),
       Expanded(
         flex: 2,
-        child: TextField(
+        child: TextFormField(
+          initialValue: state.targetHost,
           decoration: rectangleDecoration(labelText: "IP address"),
           onChanged: (text) {
             state.targetHost = text;
@@ -37,7 +38,8 @@ Widget buildHostInput(HomePageState state, {double spacing = 20}) {
       SizedBox(width: spacing),
       Expanded(
         flex: 1,
-        child: TextField(
+        child: TextFormField(
+          initialValue: state.targetPort.toString(),
           decoration: rectangleDecoration(labelText: "Port"),
           onChanged: (text) => state.targetPort = int.parse(text),
           maxLength: 4,

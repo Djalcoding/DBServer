@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:serverclient/main.dart';
 import 'package:serverclient/pages/send.dart';
 import 'package:serverclient/pages/connect.dart';
+import 'package:serverclient/pages/serverinfo.dart';
 import 'package:serverclient/pages/settings.dart';
 import 'package:serverclient/translation.dart';
 
@@ -44,7 +45,7 @@ enum ServerPage {
   ),
   serverInfo(
     BilingualString("Server information", "Informations du serveur"),
-    widget: _serverInformationPage,
+    widget: serverInfoPage,
     needsConnection: true,
   ),
   settings(BilingualString("Settings", "Paramètres"), widget: settingsPage);

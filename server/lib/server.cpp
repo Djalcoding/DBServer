@@ -1,13 +1,19 @@
 #include "server.h"
+#include "http.h"
 #include "logger.h"
+#include <algorithm>
 #include <cerrno>
 #include <chrono>
 #include <format>
+#include <ios>
+#include <iostream>
 #include <thread>
 #include <unistd.h>
 #define TRIAL_COUNT 5
 
-void wait_ms(unsigned int time) { std::this_thread::sleep_for(std::chrono::milliseconds(time)); }
+void wait_ms(unsigned int time) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(time));
+}
 
 ServerBase::ServerBase(unsigned int port) : port(port) {
     server_socket_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -19,19 +25,26 @@ ServerBase::ServerBase(unsigned int port) : port(port) {
     address.sin_addr.s_addr = INADDR_ANY;
     log_header = std::format("SERVER:{}; fd:{}", port, server_socket_fd);
     int remaining_trial = TRIAL_COUNT;
-    while (bind(server_socket_fd, (sockaddr *)&address, sizeof(address)) == -1 && remaining_trial--) {
-        Logger::getInstance()->push({log_header,
-                                     std::format("Failed to bind on port {} (err {}), retrying in 3 s [{}/{}]", port,
-                                                 errno, remaining_trial, TRIAL_COUNT),
-                                     Logger::LogLevel::WAR});
+    while (bind(server_socket_fd, (sockaddr *)&address, sizeof(address)) ==
+               -1 &&
+           remaining_trial--) {
+        Logger::getInstance()->push(
+            {log_header,
+             std::format(
+                 "Failed to bind on port {} (err {}), retrying in 3 s [{}/{}]",
+                 port, errno, remaining_trial, TRIAL_COUNT),
+             Logger::LogLevel::WAR});
         wait_ms(3000);
     }
     if (remaining_trial <= 0) {
-        Logger::getInstance()->push({log_header,
-                                     std::format("Could not bind on port {}, gracefully shutting down", port),
-                                     Logger::LogLevel::ERR});
+        Logger::getInstance()->push(
+            {log_header,
+             std::format("Could not bind on port {}, gracefully shutting down",
+                         port),
+             Logger::LogLevel::ERR});
     } else {
-        Logger::getInstance()->push({log_header, std::format("Binded to port {}", port)});
+        Logger::getInstance()->push(
+            {log_header, std::format("Binded to port {}", port)});
     }
 }
 
@@ -39,14 +52,17 @@ ServerBase::~ServerBase() { close(server_socket_fd); }
 
 bool ServerBase::start(unsigned int backlog_size) noexcept(false) {
     if (started) {
-        Logger::getInstance()->push({log_header,
-                                     std::format("tried to start but it was already started on port {}", port),
-                                     Logger::LogLevel::WAR});
+        Logger::getInstance()->push(
+            {log_header,
+             std::format("tried to start but it was already started on port {}",
+                         port),
+             Logger::LogLevel::WAR});
         return false;
     }
     listen(server_socket_fd, backlog_size);
     Logger::getInstance()->push(
-        {log_header, std::format("Started on port {}, on file descriptor {}", port, server_socket_fd)});
+        {log_header, std::format("Started on port {}, on file descriptor {}",
+                                 port, server_socket_fd)});
     started = true;
     return true;
 }
@@ -70,23 +86,36 @@ Server &Server::on_default(ServerResponse response) {
     return *this;
 }
 
-
+#define close_client ;
+#define keep_client_alive ;
 bool Server::accept_clients(int timeout) {
     if (std::optional<Client> client = ServerBase::accept(timeout)) {
-        return pool.execute(std::packaged_task<void()>([this, client = std::move(*client)]() mutable {
-            client.wait_for_data(3000);
-            const std::string request = client.peek_available();
-            for (auto &route : routes) {
-                if (route.predicate(request)) {
-                    route.response(client);
-                    goto close_client;
-                    return;
+        Logger::getInstance()->push({"[TCP]", "new connection"});
+        return pool.execute(std::packaged_task<void()>(
+            [this, client = std::move(*client)]() mutable {
+                while (!client.stale()) {
+                    if (!client.wait_for_data(100))
+                        continue;
+                    const std::string request = client.read_available();
+                    bool terminate = http::HttpReader::header(
+                                         request, "Connection") == "close";
+                    bool matched = false;
+                    for (auto &route : routes) {
+                        if (route.predicate(request)) {
+                            matched = true;
+                            route.response(client, request);
+                            break;
+                        }
+                    }
+                    if (!matched) {
+                        default_response(client, request);
+                        terminate = true;
+                    }
+                    if (terminate)
+                        break;
                 }
-            }
-            default_response(client);
-        close_client:
-            client.close();
-        }));
+                client.close();
+            }));
     } else
         return false;
 }
