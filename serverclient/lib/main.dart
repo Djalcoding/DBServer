@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:serverclient/appinfo.dart';
+import 'package:serverclient/network.dart';
 import 'package:serverclient/pages.dart';
 import 'package:serverclient/statusbar.dart';
 
@@ -42,12 +43,27 @@ class HomePage extends StatefulWidget {
 typedef ScaffoldKey = GlobalKey<ScaffoldState>;
 
 class HomePageState extends State<HomePage> {
-  ServerPage _page = ServerPage.connect;
-  ConnectivityStatus connectivityStatus = ConnectivityStatus.disconnected;
-  final ScaffoldKey _scaffoldKey = ScaffoldKey();
+  final ServerPipe pipe;
+  ServerPage _page;
+  String targetHost = "";
+  int targetPort = 0;
+  ConnectivityStatus _connectivityStatus;
   bool _isEnglish = true;
+  final ScaffoldKey _scaffoldKey = ScaffoldKey();
   final List<PlatformFile> _scheduledFiles = [];
   List<PlatformFile> get scheduledFiles => _scheduledFiles;
+
+  HomePageState()
+    : pipe = ServerPipe(),
+      _page = ServerPage.connect,
+      _connectivityStatus = ConnectivityStatus.disconnected {
+    pipe.onConnectivityUpdate(
+      (state) => setState(() {
+        _connectivityStatus = state;
+      }),
+    );
+  }
+
   void scheduleFile(PlatformFile file) => _scheduledFiles.add(file);
   void scheduleFiles(List<PlatformFile>? files) =>
       setState(() => _scheduledFiles.addAll(files ?? []));
@@ -62,11 +78,11 @@ class HomePageState extends State<HomePage> {
     return Scaffold(
       key: _scaffoldKey,
       appBar: buildStatusBar(
-        title: connectivityStatus.getString("127.0.0.1").get(_isEnglish),
-        color: connectivityStatus.color,
-        icon: connectivityStatus.icon,
+        title: _connectivityStatus.getString(targetHost).get(_isEnglish),
+        color: _connectivityStatus.color,
+        icon: _connectivityStatus.icon,
         useSurfaceText:
-            isDarkTheme && connectivityStatus == ConnectivityStatus.connecting,
+            isDarkTheme && _connectivityStatus == ConnectivityStatus.connecting,
         shadowColor: Theme.of(context).colorScheme.shadow,
       ),
       drawer: _buildDrawer(),
@@ -177,6 +193,10 @@ class HomePageState extends State<HomePage> {
         ),
       ),
     );
+  }
+
+  bool get connectedToServer {
+      return _connectivityStatus == ConnectivityStatus.connected;
   }
 
   void setLanguage(bool status) {
