@@ -53,7 +53,7 @@ class Server : private ServerBase {
     Cache_t cache;
     /// Returns true if a client was accepted
   public:
-    Server(unsigned int port) : ServerBase(port) {};
+    Server(unsigned int port) : ServerBase(port), cache(100) {};
     void start(unsigned int backlog_size = 10) {
         ServerBase::start(backlog_size);
     }

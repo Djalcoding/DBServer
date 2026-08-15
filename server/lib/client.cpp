@@ -7,6 +7,8 @@
 #include <sys/uio.h>
 #include <unistd.h>
 
+struct Client::flush Client::flush = {};
+
 Client::Client(Client &&moved)
     : file_descriptor(moved.file_descriptor),
       log_header(std::move(moved.log_header)),

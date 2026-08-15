@@ -17,7 +17,7 @@ int main(int argc, char **argv) {
     server.on(GET, "/", [](Client &c, http::packet) { c.write_http_ok("hi"); })
         .on(GET, "/status",
             [](Client &c, http::packet) { c.write_http_ok("Bye"); })
-        .on(GET, "/cache",
+        /*.on(GET, "/cache",
             [&](Client &c, http::packet) {
                 std::stringstream ss;
                 for (auto c : *server.getCache()) {
@@ -29,7 +29,7 @@ int main(int argc, char **argv) {
                        << " : " << c.value.size() << "B \n";
                 }
                 c.write_http_ok(ss.str());
-            })
+            })*/
         .on(GET, "/slow",
             [](Client &c, http::packet) {
                 std::this_thread::sleep_for(std::chrono::seconds(10));
@@ -47,7 +47,7 @@ int main(int argc, char **argv) {
                 }
                 c.write_http_ok(stream.str());
             })
-        .on_predicate(
+        /*.on_predicate(
             [&](http::packet &packet) {
                 std::filesystem::path p = observed_directory.string().append(
                     http::HttpReader::target(packet)); // TODO : Optimize this
@@ -67,7 +67,7 @@ int main(int argc, char **argv) {
                                                              request.length());
                 c.write_http_ok(*server.getCache()->get_or_insert(
                     path, [&] { return FileReader{path}.get_contents(); }));
-            })
+            })*/
         .on_default([](Client &c, http::packet) {
             c.write_http("404 Not Found", "Unknown page");
         });
