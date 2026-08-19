@@ -38,7 +38,7 @@ ssize_t Client::read_n(ssize_t n, byte_t *buffer) {
     Logger::getInstance()->push(
         {log_header,
          std::format("Asking client to send (read operation) {} bytes ", n)});
-    ssize_t out = read(file_descriptor, buffer, n);
+    ssize_t out = ::read(file_descriptor, buffer, n);
     if (out == -1) {
         throw std::runtime_error("could not read file descriptor");
     } else if (out != 0)
@@ -98,6 +98,15 @@ void Client::write(std::string_view input) {
         Logger::getInstance()->push(
             {log_header, std::format("sent {} byte packet", w, input.size())});
     }
+}
+
+void Client::write_http_header(std::string_view response_type,
+                               std::size_t length) {
+    *this << "HTTP/1.1 " << response_type << "\r\n"
+          << "Content-Length: " << std::to_string(length) << "\r\n"
+          << "Connection : close\r\n"
+          << "\r\n"
+          << Client::flush;
 }
 void Client::write_http(std::string_view response_type,
                         std::string_view contents) {

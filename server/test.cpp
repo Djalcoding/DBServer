@@ -1,26 +1,23 @@
-#include "lib/client.h"
+#include "lib/http.h"
 #include "lib/server.h"
-#include "lib/servercache.h"
+#include <sys/uio.h>
+#include <unistd.h>
+
 void cache();
 int main() {
     cache();
     return 0;
 }
 
-
-
-
 void cache() {
-    ServerBase server(72);
+    ServerBase server(8080);
     server.start(10);
-    Client client = server.accept_blocking();
-    ServerCache<300> cache(600);
-    client.wait_for_data(-1);
-    auto& buf = cache.ask("Client", 458);
-    std::cout << client.peek_available() << '\n';
-    client.read_available(buf);
-    std::cout << *cache.get("Client").value(); 
+    Client c = server.accept_blocking();
+    ServerCache<100> cache{20};
+    c.wait_for_data(-1);
+    auto n = c.read("Client", &cache);
+    decltype(n)::view view = n;
 
-    //cache.display();
+    std::cout << "Method : " << http::HttpReader::method(view).toString()<< '\n';
+    std::cout << "Info : " << http::HttpReader::target(view)<< '\n';
 }
-

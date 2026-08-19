@@ -98,7 +98,7 @@ bool Server::accept_clients(int timeout) {
                         continue;
                     const std::string request = client.read_available();
                     bool terminate = http::HttpReader::header(
-                                         request, "Connection") == "close";
+                                         std::string_view(request), "Connection") == "close";
                     bool matched = false;
                     for (auto &route : routes) {
                         if (route.predicate(request)) {

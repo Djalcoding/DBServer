@@ -59,9 +59,9 @@ class Server : private ServerBase {
     }
     Server &on_default(ServerResponse response);
     Server &on(const std::string &target, ServerResponse response) {
-        return on(GET, target, response);
+        return on(http::HttpMethod::GET, target, response);
     }
-    Server &on(HttpMethod method, const std::string &target,
+    Server &on(http::HttpMethod method, const std::string &target,
                ServerResponse response) {
         return on_predicate(
             [=](std::string_view packet) {
