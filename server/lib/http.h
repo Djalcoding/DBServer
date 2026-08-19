@@ -52,7 +52,6 @@ class HttpReader {
                                          std::size_t n, Args... targets) {
         for (typename Packet::iterator it = view.begin() + cursor; n != 0 && it != view.end();
              it++) {
-            std::cout << "Checking " << cursor << " : " << view[cursor] << '\n';
             if (((view[cursor] == targets) || ...))
                 n--;
             cursor++;
@@ -69,9 +68,7 @@ class HttpReader {
     template <View Packet> static Packet target(Packet packet) {
         std::size_t cursor = 0;
         std::size_t start = exhaust(packet, cursor, 1, ' ');
-        std::cout << start << '\n';
         std::size_t end = exhaust(packet, cursor, 1, ' ');
-        std::cout << end << '\n';
         return packet.substr(start, end - start - 1);
     }
     template <View Packet> static Packet version(Packet packet) {

@@ -249,12 +249,12 @@ class ServerCache {
         const Iterator begin() const { return start_it; }
         const Iterator end() const { return end_it; }
         char operator[](std::size_t idx) const {
-            if (idx > length) {
+            if (idx >= length) {
                 throw std::overflow_error(
                     "Overflow ! "); // TODO : better error message (or just
                                     // build -fno-exceptions)
             }
-            return *start_it + idx;
+            return *(start_it + idx);
         };
 
         NodeView substr(std::size_t start, std::size_t length) {

@@ -2,6 +2,7 @@
 #include "lib/server.h"
 #include <sys/uio.h>
 #include <unistd.h>
+#include "lib/utils.h"
 
 void cache();
 int main() {
@@ -17,7 +18,8 @@ void cache() {
     c.wait_for_data(-1);
     auto n = c.read("Client", &cache);
     decltype(n)::view view = n;
-
     std::cout << "Method : " << http::HttpReader::method(view).toString()<< '\n';
     std::cout << "Info : " << http::HttpReader::target(view)<< '\n';
+    std::cout << "Version : " << http::HttpReader::version(view)<< '\n';
+    std::cout << "Version : " << http::HttpReader::header(view, "Connection") << '\n';
 }
