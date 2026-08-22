@@ -105,8 +105,7 @@ class Client {
     }
     friend void operator<<(Client &c, struct flush) {
         // TODO: handle IOV_MAX
-        writev(c.file_descriptor, c.write_buffer.data(), c.write_buffer.size());
-
+        ssize_t written = ::writev(c.file_descriptor, c.write_buffer.data(), c.write_buffer.size());
         c.write_buffer.clear();
     }
 };

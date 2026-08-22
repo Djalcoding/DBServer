@@ -9,14 +9,16 @@
 #include <unistd.h>
 
 int main(int argc, char **argv) {
-    Server server{static_cast<unsigned int>(80)};
+    Server server{static_cast<unsigned int>(9999)};
     const std::filesystem::path observed_directory{
         "./observed"}; // TODO : Add str var
     assert(std::filesystem::is_directory(observed_directory));
     server.start(10);
-    server.on(GET, "/", [](Client &c, http::packet) { c.write_http_ok("hi"); })
-        .on(GET, "/status",
-            [](Client &c, http::packet) { c.write_http_ok("Bye"); })
+    server
+        .on(http::HttpMethod::GET, "/",
+            [](Client &c, Server::packet) { c.write_http_ok("hi"); })
+        .on(http::HttpMethod::GET, "/status",
+            [](Client &c, Server::packet) { c.write_http_ok("Bye"); })
         /*.on(GET, "/cache",
             [&](Client &c, http::packet) {
                 std::stringstream ss;
@@ -30,13 +32,13 @@ int main(int argc, char **argv) {
                 }
                 c.write_http_ok(ss.str());
             })*/
-        .on(GET, "/slow",
-            [](Client &c, http::packet) {
+        .on(http::HttpMethod::GET, "/slow",
+            [](Client &c, Server::packet) {
                 std::this_thread::sleep_for(std::chrono::seconds(10));
                 c.write_http_ok("B y e");
             })
-        .on(GET, "/hierarchy",
-            [&](Client &c, http::packet) {
+        .on(http::HttpMethod::GET, "/hierarchy",
+            [&](Client &c, Server::packet) {
                 std::stringstream stream;
                 for (auto &object :
                      std::filesystem::recursive_directory_iterator(
@@ -47,28 +49,29 @@ int main(int argc, char **argv) {
                 }
                 c.write_http_ok(stream.str());
             })
-        /*.on_predicate(
-            [&](http::packet &packet) {
-                std::filesystem::path p = observed_directory.string().append(
-                    http::HttpReader::target(packet)); // TODO : Optimize this
+        .on_predicate(
+            [&](Server::packet packet) {
+                std::filesystem::path p =
+                    observed_directory /
+                    http::HttpReader::target(packet).substr(
+                        1); 
                 return std::filesystem::exists(p) &&
                        std::filesystem::is_regular_file(p) &&
-                       http::HttpReader::method(packet) == GET &&
+                       http::HttpReader::method(packet) ==
+                           http::HttpMethod::GET &&
                        !std::filesystem::canonical(p)
                             .lexically_relative(
                                 std::filesystem::canonical(observed_directory))
                             .generic_string()
                             .starts_with("..");
             },
-            [&](Client &c, http::packet request) {
+            [&](Client &c, Server::packet request) {
                 std::filesystem::path path =
                     observed_directory /
-                    http::HttpReader::target(request).substr(1,
-                                                             request.length());
-                c.write_http_ok(*server.getCache()->get_or_insert(
-                    path, [&] { return FileReader{path}.get_contents(); }));
-            })*/
-        .on_default([](Client &c, http::packet) {
+                    http::HttpReader::target(request).substr(1);
+                c.sendfile(path);
+            })
+        .on_default([](Client &c, Server::packet) {
             c.write_http("404 Not Found", "Unknown page");
         });
     while (true) {

@@ -2,8 +2,11 @@
 
 #pragma once
 #include <bits/xopen_lim.h>
+#include <climits>
 #include <concepts>
+#include <cstdint>
 #include <cstdlib>
+#include <filesystem>
 #include <format>
 #include <functional>
 #include <iostream>
@@ -32,6 +35,7 @@ class ServerCache {
         using view = NodeView;
         struct Iterator {
             std::size_t idx;
+
           private:
             Node *node;
             Node *start;
@@ -121,6 +125,7 @@ class ServerCache {
             }
             bool operator!=(const Iterator &other) { return !(*this == other); }
             char operator*() const { return node->data[idx]; }
+            char* buffer() {return node->data + idx;}
             friend struct NodeView;
         };
 
@@ -191,6 +196,13 @@ class ServerCache {
             }
             return curr->data;
         }
+
+        std::size_t size_of_nth(std::size_t idx) {
+            if (idx + 1 == owned()) {
+                return size % buffer_size;
+            }
+            return buffer_size;
+        };
         template <class Self>
         auto operator[](this Self &&s, std::size_t idx) -> decltype(s.data[0]) {
             return s.buffer(idx / buffer_size)[idx % buffer_size];
@@ -257,11 +269,13 @@ class ServerCache {
             return *(start_it + idx);
         };
 
-        NodeView substr(std::size_t start, std::size_t length) {
-            if (start + length > this->length) {
-                throw std::overflow_error(
-                    "Overflow ! "); // TODO : better error message (or just
-                                    // build -fno-exceptions)
+        NodeView substr(std::size_t start, std::size_t length = SIZE_MAX) {
+            if (start > this->length) {
+                throw std::invalid_argument(
+                    "start is greater than full length");
+            }
+            if (length > this->length - start) {
+                length = this->length - start;
             }
             return NodeView{start_it + start, start_it + start + length,
                             length};
@@ -304,12 +318,31 @@ class ServerCache {
             return true;
         }
 
-        friend std::ostream &operator<<(std::ostream &stream,
-                                        const NodeView &view) {
+        friend std::ostream &
+        operator<<(std::ostream &stream,
+                   const NodeView &view) { // TODO : change this
             for (char c : view) {
-                std::cout << c;
+                stream << c;
             }
             return stream;
+        }
+
+        friend std::filesystem::path &operator/=(std::filesystem::path &path,
+                                                 const NodeView &view) {
+            Node *startNode = view.start_it.start;
+            for (std::size_t sent_bytes{0}, i{0}; sent_bytes < view.length;
+                 sent_bytes++, i++) {
+                std::size_t to_send = std::min(startNode->size_of_nth(i), view.length-sent_bytes);
+                path /= std::string_view((startNode->buffer(i) + (i == 0 ? view.start_it.idx : 0)), to_send);
+                sent_bytes+= to_send;
+            }
+            return path;
+        }
+        friend std::filesystem::path
+        operator/(const std::filesystem::path &path, const NodeView &view) {
+            std::filesystem::path copy = path;
+            copy /= view;
+            return copy;
         }
 
       private:

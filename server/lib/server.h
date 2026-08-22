@@ -6,6 +6,7 @@
 #include "servercache.h"
 #include "threadpool.h"
 #include <cassert>
+#include <csignal>
 #include <functional>
 #include <future>
 #include <memory>
@@ -36,10 +37,15 @@ class ServerBase {
 };
 
 class Server : private ServerBase {
-    using ServerResponse =
-        std::function<void(Client &, http::packet)>;
-    using Predicate = std::function<bool(http::packet)>;
     using Cache_t = ServerCache<100>;
+
+  public:
+    using packet = Cache_t::NodeView;
+
+  private:
+    using ServerResponse = std::function<void(Client &, packet)>;
+
+    using Predicate = std::function<bool(packet)>;
     struct ServerRoute {
         Predicate predicate;
         ServerResponse response;
@@ -47,15 +53,17 @@ class Server : private ServerBase {
             : predicate(std::move(predicate)), response(std::move(response)) {};
     };
     using ServerRequest = std::shared_ptr<std::packaged_task<void()>>;
-    ServerResponse default_response = [](Client &, http::packet) {};
+    ServerResponse default_response = [](Client &, packet) {};
     std::vector<ServerRoute> routes;
     ThreadPool pool{20};
     Cache_t cache;
-    /// Returns true if a client was accepted
+    unsigned long long connection_count = 0;
+
   public:
     Server(unsigned int port) : ServerBase(port), cache(100) {};
     void start(unsigned int backlog_size = 10) {
         ServerBase::start(backlog_size);
+        signal(SIGPIPE, SIG_IGN);
     }
     Server &on_default(ServerResponse response);
     Server &on(const std::string &target, ServerResponse response) {
@@ -64,7 +72,7 @@ class Server : private ServerBase {
     Server &on(http::HttpMethod method, const std::string &target,
                ServerResponse response) {
         return on_predicate(
-            [=](std::string_view packet) {
+            [=](packet packet) {
                 return method == http::HttpReader::method(packet) &&
                        target == http::HttpReader::target(packet);
             },

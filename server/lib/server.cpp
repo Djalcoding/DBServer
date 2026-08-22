@@ -1,12 +1,9 @@
 #include "server.h"
 #include "http.h"
 #include "logger.h"
-#include <algorithm>
 #include <cerrno>
 #include <chrono>
 #include <format>
-#include <ios>
-#include <iostream>
 #include <thread>
 #include <unistd.h>
 #define TRIAL_COUNT 5
@@ -91,27 +88,32 @@ Server &Server::on_default(ServerResponse response) {
 bool Server::accept_clients(int timeout) {
     if (std::optional<Client> client = ServerBase::accept(timeout)) {
         Logger::getInstance()->push({"[TCP]", "new connection"});
+        connection_count++;
         return pool.execute(std::packaged_task<void()>(
             [this, client = std::move(*client)]() mutable {
                 while (!client.stale()) {
                     if (!client.wait_for_data(100))
                         continue;
-                    const std::string request = client.read_available();
-                    bool terminate = http::HttpReader::header(
-                                         std::string_view(request), "Connection") == "close";
-                    bool matched = false;
+                    packet request =
+                        client.read(std::format("Process {}", connection_count),
+                                    getCache());
+                    bool terminate_TCP = false;
+                    if (auto connection_type =
+                            http::HttpReader::header(request, "Connection")) {
+                        terminate_TCP = connection_type.value() == "Close";
+                    }
+                    bool use_default_response = true;
                     for (auto &route : routes) {
                         if (route.predicate(request)) {
-                            matched = true;
+                            use_default_response = false;
                             route.response(client, request);
                             break;
                         }
                     }
-                    if (!matched) {
+                    if (use_default_response) {
                         default_response(client, request);
-                        terminate = true;
                     }
-                    if (terminate)
+                    if (terminate_TCP)
                         break;
                 }
                 client.close();
