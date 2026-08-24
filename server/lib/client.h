@@ -39,7 +39,7 @@ class Client {
   public:
     struct flush {};
     static flush flush;
-    Client(FD_T file_descriptor, int timeout = 60000)
+    Client(FD_T file_descriptor, int timeout = 5000)
         : file_descriptor(file_descriptor) {
         log_header = std::format("Client; fd:{}", file_descriptor);
         last_packet_timestamp = clock::now();
@@ -81,6 +81,7 @@ class Client {
 
     template <std::size_t s>
     ServerCache<s>::Node &read(std::string_view key, ServerCache<s> *cache) {
+        last_packet_timestamp = clock::now();
         auto &buf = cache->ask(key, available());
         ::iovec *b = new iovec[buf.owned()]; // TODO : handle zeroes
         buf.iovec(b);

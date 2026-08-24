@@ -14,6 +14,7 @@
 #include <stdexcept>
 #include <string>
 #include <sys/uio.h>
+#include <thread>
 #include <type_traits>
 #include <unordered_map>
 
@@ -125,7 +126,7 @@ class ServerCache {
             }
             bool operator!=(const Iterator &other) { return !(*this == other); }
             char operator*() const { return node->data[idx]; }
-            char* buffer() {return node->data + idx;}
+            char *buffer() { return node->data + idx; }
             friend struct NodeView;
         };
 
@@ -146,7 +147,7 @@ class ServerCache {
         Iterator begin() { return Iterator{0, this, this}; }
         // TODO rbegin and rend
 
-      private:
+      public: // TODO : Change this
         ptr next;
         ptr prev;
         ptr child;
@@ -159,15 +160,18 @@ class ServerCache {
         /// expand the node and set the has_data flag to false, this should be
         /// paired with removing the key from the map
         ptr evict() {
-            has_data = false;
-            if (!parent())
+            if (!parent()) {
+                has_data = false;
                 return this;
+            }
+            has_data = false;
             ptr end = next;
             ptr childTail = child->child;
             next = child;
             child->prev = this;
             childTail->next = end;
-            end->prev = childTail;
+            if (end)
+                end->prev = childTail;
             child->child = nullptr;
             child = nullptr;
             return childTail;
@@ -222,7 +226,9 @@ class ServerCache {
             std::size_t iterations =
                 std::min(static_cast<std::size_t>(IOV_MAX), owned());
             while (i < iterations) {
-                iov_buffer[i] = ::iovec{curr->buffer(), buffer_size};
+                iov_buffer[i] = ::iovec{
+                    curr->buffer(),
+                    buffer_size}; // TODO : make final buffer properly sized
                 curr = curr->next_buffer();
                 i++;
             }
@@ -332,9 +338,12 @@ class ServerCache {
             Node *startNode = view.start_it.start;
             for (std::size_t sent_bytes{0}, i{0}; sent_bytes < view.length;
                  sent_bytes++, i++) {
-                std::size_t to_send = std::min(startNode->size_of_nth(i), view.length-sent_bytes);
-                path /= std::string_view((startNode->buffer(i) + (i == 0 ? view.start_it.idx : 0)), to_send);
-                sent_bytes+= to_send;
+                std::size_t to_send = std::min(startNode->size_of_nth(i),
+                                               view.length - sent_bytes);
+                path /= std::string_view(
+                    (startNode->buffer(i) + (i == 0 ? view.start_it.idx : 0)),
+                    to_send);
+                sent_bytes += to_send;
             }
             return path;
         }
@@ -365,6 +374,11 @@ class ServerCache {
     map_t map;
 
   public:
+    using iterator = map_t::iterator;
+
+    iterator begin() { return map.begin(); }
+    iterator end() { return map.end(); }
+
     ServerCache(std::size_t node_count) {
         if (node_count < 2)
             throw std::invalid_argument("The cache requires at least 2 nodes");
@@ -409,7 +423,7 @@ class ServerCache {
             }
             long long remaining = bytes - keyNode->real_size();
             NodePtr end = tail;
-            NodePtr start = eject_n(required_nodes(remaining));
+            auto [start, _] = eject_n(required_nodes(remaining));
             tail = start->prev;
             tail->next = nullptr;
             start->prev = nullptr;
@@ -426,7 +440,7 @@ class ServerCache {
         }
 
         // owning resize
-        NodePtr start_node = eject_n(required_nodes(bytes));
+        auto [start_node, end] = eject_n(required_nodes(bytes));
         start_node->has_data = true;
         start_node->child = start_node->next;
         if (start_node->child) {
@@ -453,6 +467,28 @@ class ServerCache {
         }
     }
 
+    bool remove(std::string_view key) {
+        if (NodePtr ptr = at(key)) {
+            map.erase(key);
+            if (ptr == head) {
+                head = head->next;
+            }
+
+            NodePtr prev = ptr->prev;
+            NodePtr next = ptr->next;
+            if (prev)
+                prev->next = next;
+            if (next)
+                next->prev = prev;
+            tail->next = ptr;
+            ptr->prev = tail;
+            tail = ptr->evict();
+            tail->next = nullptr;
+            return true;
+        }
+        return false;
+    }
+
   private:
     NodePtr at(std::string_view key) {
         typename map_t::iterator it = map.find(key);
@@ -460,16 +496,17 @@ class ServerCache {
             return nullptr;
         return it->second;
     }
-    // return the head node of the eviction
-    NodePtr eject_n(std::size_t n) {
+    // returns [last evicted, first evicted]
+    std::pair<NodePtr, NodePtr> eject_n(std::size_t n) {
         if (n == 0)
-            return nullptr;
+            return {nullptr, nullptr};
 
-        if (tail->has_data) {
+        if (tail->has_data) { // I
             map.erase(tail->key);
             tail = tail->evict();
         }
         NodePtr curr = tail;
+        NodePtr start = curr;
         while (--n) {
             curr = curr->prev;
             if (curr->has_data) {
@@ -477,7 +514,7 @@ class ServerCache {
                 curr = curr->evict();
             }
         }
-        return curr;
+        return {curr, start};
     }
     void pushNodeToFront(NodePtr ptr) {
         if (ptr == head)
@@ -495,15 +532,16 @@ class ServerCache {
         head = ptr;
     }
 
+  public:
     void display() {
         NodePtr curr = head;
         while (curr) {
-            std::cout << '(' << (curr->has_data ? (curr->key) : "_");
+            std::cout << '(' << curr->key;
             if (curr->parent()) {
                 std::cout << '{';
                 NodePtr child = curr->child;
                 while (child) {
-                    std::cout << "(" << (child->has_data ? (child->key) : "_")
+                    std::cout << "(" << "_"
                               << ") =>";
                     child = child->next;
                 }

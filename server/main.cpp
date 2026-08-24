@@ -19,19 +19,17 @@ int main(int argc, char **argv) {
             [](Client &c, Server::packet) { c.write_http_ok("hi"); })
         .on(http::HttpMethod::GET, "/status",
             [](Client &c, Server::packet) { c.write_http_ok("Bye"); })
-        /*.on(GET, "/cache",
-            [&](Client &c, http::packet) {
+        .on(http::HttpMethod::GET, "/cache",
+            [&](Client &c, Server::packet) {
                 std::stringstream ss;
                 for (auto c : *server.getCache()) {
-                    if (c.empty())
-                        continue;
-                    ss << std::filesystem::path(c.key)
+                    ss << std::filesystem::path(c.second->key)
                               .lexically_relative(observed_directory)
                               .native()
-                       << " : " << c.value.size() << "B \n";
+                       << " : " << c.second->size << "B \n";
                 }
                 c.write_http_ok(ss.str());
-            })*/
+            })
         .on(http::HttpMethod::GET, "/slow",
             [](Client &c, Server::packet) {
                 std::this_thread::sleep_for(std::chrono::seconds(10));

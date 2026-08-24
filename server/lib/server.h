@@ -38,7 +38,6 @@ class ServerBase {
 
 class Server : private ServerBase {
     using Cache_t = ServerCache<100>;
-
   public:
     using packet = Cache_t::NodeView;
 

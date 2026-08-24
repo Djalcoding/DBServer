@@ -3,6 +3,7 @@
 #include "logger.h"
 #include <cerrno>
 #include <chrono>
+#include <cstring>
 #include <format>
 #include <ios>
 #include <thread>
@@ -29,8 +30,8 @@ ServerBase::ServerBase(unsigned int port) : port(port) {
         Logger::getInstance()->push(
             {log_header,
              std::format(
-                 "Failed to bind on port {} (err {}), retrying in 3 s [{}/{}]",
-                 port, errno, remaining_trial, TRIAL_COUNT),
+                 "Failed to bind on port {} ({}), retrying in 3 s [{}/{}]",
+                 port, std::strerror(errno), remaining_trial, TRIAL_COUNT),
              Logger::LogLevel::WAR});
         wait_ms(3000);
     }
@@ -89,16 +90,17 @@ Server &Server::on_default(ServerResponse response) {
 bool Server::accept_clients(int timeout) {
     if (std::optional<Client> client = ServerBase::accept(timeout)) {
         Logger::getInstance()->push(
-            {"[TCP]", std::format("new connection on file descriptor {}", client->fd())});
+            {"[TCP]", std::format("new connection on file descriptor {}",
+                                  client->fd())});
         connection_count++;
         return pool.execute(std::packaged_task<void()>(
-            [this, client = std::move(*client)]() mutable {
+            [this, id = connection_count, client = std::move(*client)]() mutable {
+                std::string process_name =
+                    std::format("Process {}", id);
                 while (!client.stale()) {
                     if (!client.wait_for_data(100))
                         continue;
-                    packet request =
-                        client.read(std::format("Process {}", connection_count),
-                                    getCache());
+                    packet request = client.read(process_name, getCache());
                     bool terminate_TCP = true;
                     if (auto connection_type =
                             http::HttpReader::header(request, "Connection")) {
@@ -108,6 +110,7 @@ bool Server::accept_clients(int timeout) {
                     for (auto &route : routes) {
                         if (route.predicate(request)) {
                             use_default_response = false;
+                            if(client.peer_closed()) break;
                             route.response(client, request);
                             break;
                         }
@@ -115,9 +118,11 @@ bool Server::accept_clients(int timeout) {
                     if (use_default_response) {
                         default_response(client, request);
                     }
-                    if (terminate_TCP || client.peer_closed())
+                    if (terminate_TCP)
                         break;
                 }
+                cache.remove(process_name);
+                std::cout << "Closing client " << client.fd() << '\n';
                 client.close();
             }));
     } else

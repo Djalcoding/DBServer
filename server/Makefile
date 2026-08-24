@@ -31,8 +31,9 @@ test: test.cpp $(COMPILED)
 	$(COMPILE_COMMAND) $^ -o test.exe
 	./test.exe
 
-debug: test.cpp $(COMPILED)
+debug: main.cpp $(COMPILED)
 	$(COMPILE_COMMAND) $^ -o debug.exe -g
+	gdb ./debug.exe
 
 run: $(OUTPUT_FILE)
 	./$^ $(COMMAND_LINE_ARGS)
