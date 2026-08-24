@@ -4,6 +4,7 @@
 #include <cerrno>
 #include <chrono>
 #include <format>
+#include <ios>
 #include <thread>
 #include <unistd.h>
 #define TRIAL_COUNT 5
@@ -87,7 +88,8 @@ Server &Server::on_default(ServerResponse response) {
 #define keep_client_alive ;
 bool Server::accept_clients(int timeout) {
     if (std::optional<Client> client = ServerBase::accept(timeout)) {
-        Logger::getInstance()->push({"[TCP]", "new connection"});
+        Logger::getInstance()->push(
+            {"[TCP]", std::format("new connection on file descriptor {}", client->fd())});
         connection_count++;
         return pool.execute(std::packaged_task<void()>(
             [this, client = std::move(*client)]() mutable {
@@ -97,7 +99,7 @@ bool Server::accept_clients(int timeout) {
                     packet request =
                         client.read(std::format("Process {}", connection_count),
                                     getCache());
-                    bool terminate_TCP = false;
+                    bool terminate_TCP = true;
                     if (auto connection_type =
                             http::HttpReader::header(request, "Connection")) {
                         terminate_TCP = connection_type.value() == "Close";
@@ -113,7 +115,7 @@ bool Server::accept_clients(int timeout) {
                     if (use_default_response) {
                         default_response(client, request);
                     }
-                    if (terminate_TCP)
+                    if (terminate_TCP || client.peer_closed())
                         break;
                 }
                 client.close();

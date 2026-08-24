@@ -51,7 +51,7 @@ bool Client::wait_for_data(int timeout) const {
     pollfd pfd{};
     pfd.fd = file_descriptor;
     pfd.events = POLLIN;
-    return poll(&pfd, 1, timeout) > 0;
+    return ::poll(&pfd, 1, timeout) > 0;
 }
 std::string Client::peek_available() const {
     ssize_t available_bytes = available();

@@ -75,6 +75,9 @@ class Client {
     ssize_t readv(iovec *buffers, std::size_t buffer_c) {
         return ::readv(file_descriptor, buffers, buffer_c);
     }
+    FD_T fd() {
+        return file_descriptor;
+    }
 
     template <std::size_t s>
     ServerCache<s>::Node &read(std::string_view key, ServerCache<s> *cache) {
@@ -95,6 +98,13 @@ class Client {
     bool stale() const {
         return (clock::now() - last_packet_timestamp) > timeout;
     };
+
+    bool peer_closed() const {
+        pollfd pfd{};
+        pfd.fd = file_descriptor;
+        pfd.events = POLLRDHUP;
+        return ::poll(&pfd, 1, 0); 
+    }
     // everything after this is unsafe; no flush = maybe big crash
     friend Client &operator<<(Client &c, packet_t packet) {
         if (packet.empty())

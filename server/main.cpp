@@ -9,7 +9,7 @@
 #include <unistd.h>
 
 int main(int argc, char **argv) {
-    Server server{static_cast<unsigned int>(9999)};
+    Server server{static_cast<unsigned int>(80)};
     const std::filesystem::path observed_directory{
         "./observed"}; // TODO : Add str var
     assert(std::filesystem::is_directory(observed_directory));
