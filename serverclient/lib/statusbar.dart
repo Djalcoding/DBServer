@@ -12,6 +12,9 @@ enum ConnectivityStatus {
   const ConnectivityStatus(this.color, {this.icon});
 
   BilingualString getString(String? ip) {
+    if (ip == null || ip.isEmpty) {
+      ip = "server";
+    }
     switch (this) {
       case connected:
         return BilingualString("Connected to $ip", "Connecter à $ip");

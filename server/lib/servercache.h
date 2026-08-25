@@ -1,8 +1,8 @@
 // TODO : seperate in files
 
 #pragma once
+#include <atomic>
 #include <bits/xopen_lim.h>
-#include <climits>
 #include <concepts>
 #include <cstdint>
 #include <cstdlib>
@@ -14,7 +14,6 @@
 #include <stdexcept>
 #include <string>
 #include <sys/uio.h>
-#include <thread>
 #include <type_traits>
 #include <unordered_map>
 
@@ -155,7 +154,7 @@ class ServerCache {
         bool has_data = false;
         char data[buffer_size];
         Node(ptr prev, const std::string &key, ptr next)
-            : prev(prev), key(key), next(next) {}
+            : prev(prev), key(key), next(next), child(nullptr) {}
 
         /// expand the node and set the has_data flag to false, this should be
         /// paired with removing the key from the map
@@ -402,9 +401,16 @@ class ServerCache {
         }
     }
 
-    bool contains(std::string_view key) { return map.contains(key); }
+    bool contains(std::string_view key) {
+        return map.contains(key);
+    } // thread safe
+
+    // not thread safe because
+    // T1: cache.get("a")
+    // T2: cache.get("b")
+
     std::optional<std::reference_wrapper<const Node>>
-    get(std::string_view key) {
+    get(std::string_view key) { // not thread safe...
         if (NodePtr target = at(key)) {
             pushNodeToFront(target);
             return std::cref(*target);

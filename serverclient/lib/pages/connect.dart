@@ -12,7 +12,8 @@ Widget connectPage(HomePageState state) {
       ),
       SizedBox(height: 30),
       buildHostInput(state),
-      Align(alignment: Alignment.centerRight, child: connectButton(state)),
+      Expanded(child: SizedBox()),
+      Align(alignment: Alignment.bottomCenter, child: connectButton(state)),
     ],
   );
 }
@@ -53,6 +54,13 @@ Widget buildHostInput(HomePageState state, {double spacing = 20}) {
 
 Widget connectButton(HomePageState state) {
   return ElevatedButton(
+    style: ButtonStyle(
+      shape: WidgetStatePropertyAll(
+        RoundedRectangleBorder(
+          borderRadius: BorderRadiusGeometry.all(Radius.circular(5)),
+        ),
+      ),
+    ),
     onPressed: () {
       state.pipe.connect(host: state.targetHost, port: state.targetPort);
     },

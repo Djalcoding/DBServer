@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:serverclient/main.dart';
 import 'package:serverclient/pages/send.dart';
@@ -68,18 +70,33 @@ enum ServerPage {
   }
 
   static Widget buildNotConnected() {
-    return Center(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Text(
-            "Server isn't connected",
-            style: TextStyle(fontWeight: FontWeight.w500, fontSize: 30),
-          ),
-          SizedBox(height: 20),
-          Expanded(child: Placeholder(strokeWidth: 1.25)),
-          SizedBox(height: 10),
-        ],
+    return Builder(
+      builder: (BuildContext context) => Center(
+        // TODO : replace all Themes and MediaQuery with variables when im not a lazy bum
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              "Server isn't connected",
+              style: TextStyle(
+                fontWeight: FontWeight.w500,
+                fontSize: 30,
+                color: Theme.of(context).colorScheme.onSurface.withAlpha(200),
+              ),
+            ),
+              Icon(
+                Icons.warning_rounded,
+                size:
+                    min(
+                      MediaQuery.of(context).size.width,
+                      MediaQuery.of(context).size.height,
+                    ) /
+                    1.5,
+                color: Colors.deepOrange,
+              ),
+          ],
+        ),
       ),
     );
   }
