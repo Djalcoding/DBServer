@@ -10,11 +10,14 @@
 #include <format>
 #include <functional>
 #include <iostream>
+#include <mutex>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <sys/uio.h>
 #include <type_traits>
+#include <unistd.h>
 #include <unordered_map>
 
 namespace {
@@ -257,12 +260,34 @@ class ServerCache {
         Iterator start_it;
         Iterator end_it;
         std::size_t length;
-        std::size_t size() { return length; };
+        std::size_t size() const { return length; };
         using iterator = Iterator;
         NodeView(Node node)
             : start_it(node.begin()), end_it(node.end()), length(node.size) {}
 
         NodeView &operator=(const NodeView &view) = default;
+        operator std::filesystem::path() const { // TODO : optimize this
+            std::filesystem::path p;
+            if(start_it.node == end_it.node) {
+                p = std::string_view(start_it.node->data + start_it.idx, this->size());
+                return p;
+            }
+            Node *curr = start_it.node;
+            Node *end = end_it.node;
+            std::stringstream stream;
+
+            while (curr != end) {
+                stream << std::string_view(
+                    curr->data + (curr == start_it.node ? start_it.idx : 0),
+                    buffer_size);
+                curr = curr->next_buffer();
+            }
+            stream << std::string_view(
+                curr->data + (curr == start_it.node ? start_it.idx : 0),
+                start_it.node->size % buffer_size);
+            p = stream.str();
+            return p;
+        }
         const Iterator begin() const { return start_it; }
         const Iterator end() const { return end_it; }
         char operator[](std::size_t idx) const {
@@ -370,10 +395,13 @@ class ServerCache {
     NodePtr tail;
     using map_t =
         std::unordered_map<std::string, NodePtr, Hasher, std::equal_to<>>;
+    using lock_t = std::scoped_lock<std::mutex>;
     map_t map;
 
   public:
     using iterator = map_t::iterator;
+    std::mutex
+        main_mutex; // TODO : find a way to make this lockless by using CAS
 
     iterator begin() { return map.begin(); }
     iterator end() { return map.end(); }
@@ -400,17 +428,15 @@ class ServerCache {
             curr = next;
         }
     }
-
-    bool contains(std::string_view key) {
-        return map.contains(key);
-    } // thread safe
-
-    // not thread safe because
-    // T1: cache.get("a")
-    // T2: cache.get("b")
-
+    // returns true if "key" is contained within the cache, this operation only
+    // reads
+    bool contains(std::string_view key) const { return map.contains(key); }
+    // returns an optional that may or may not contain a cref to the Node that
+    // contains the data stored in key, this operation will push the "key node"
+    // to the front of the cache
     std::optional<std::reference_wrapper<const Node>>
     get(std::string_view key) { // not thread safe...
+        lock_t lock(main_mutex);
         if (NodePtr target = at(key)) {
             pushNodeToFront(target);
             return std::cref(*target);
@@ -418,10 +444,14 @@ class ServerCache {
         return std::nullopt;
     }
 
+    // Returns a ref to the node that will be used to allocate "bytes" bytes
+    // (this may perform a resize operation if the node already exists), this is
+    // a write operation
     template <class T>
         requires std::constructible_from<std::string, T> &&
                  std::convertible_to<T, std::string_view>
     Node &ask(T key, std::size_t bytes) {
+        lock_t lock(main_mutex);
         if (NodePtr keyNode = at(static_cast<std::string_view>(key))) {
             if (keyNode->real_size() >= bytes) { // inplace resize
                 keyNode->size = std::max(keyNode->size, bytes);
@@ -465,15 +495,18 @@ class ServerCache {
         return (bytes / buffer_size) + (bytes % buffer_size != 0);
     }
 
-    // performs a copy
+    // writes a copy of "value" to the cache, this is a write operation
     void push(std::string_view key, std::string_view value) {
+        lock_t lock(main_mutex);
         Node &s = ask(key, value.size());
         for (std::size_t i{0}; i < value.size(); i++) {
             s[i] = value[i];
         }
     }
 
+    // remove the "key" node from the cache, this is a write operation
     bool remove(std::string_view key) {
+        lock_t lock(main_mutex);
         if (NodePtr ptr = at(key)) {
             map.erase(key);
             if (ptr == head) {

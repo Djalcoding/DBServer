@@ -5,9 +5,11 @@
 #include <sys/types.h>
 #pragma once
 
+#define RN "\r\n"
 namespace http {
 template <class V>
-concept View = (is_node_view<V>::value || std::same_as<std::string_view, V>);
+concept ReadableView =
+    (is_node_view<V>::value || std::same_as<std::string_view, V>);
 using packet = const std::string_view;
 
 struct HttpMethod {
@@ -32,7 +34,7 @@ struct HttpMethod {
     }
     constexpr const char *toString() const { return names[v]; }
 
-    template <View V> static constexpr HttpMethod fromString(V v) {
+    template <ReadableView V> static constexpr HttpMethod fromString(V v) {
         for (std::size_t i{0}; i < count; i++) {
             if (v == names[i]) {
                 return Value(i);
@@ -46,12 +48,12 @@ struct HttpMethod {
 class HttpReader {
     using http_packet_t = packet;
 
-    template <View Packet, class... Args>
+    template <ReadableView Packet, class... Args>
         requires((std::same_as<char, Args>), ...) // TODO : restrict this
     static constexpr std::size_t exhaust(Packet view, std::size_t &cursor,
                                          std::size_t n, Args... targets) {
-        for (typename Packet::iterator it = view.begin() + cursor; n != 0 && it != view.end();
-             it++) {
+        for (typename Packet::iterator it = view.begin() + cursor;
+             n != 0 && it != view.end(); it++) {
             if (((view[cursor] == targets) || ...))
                 n--;
             cursor++;
@@ -60,24 +62,23 @@ class HttpReader {
     }
 
   public:
-    template <View Packet>
-    static HttpMethod method(Packet packet) {
+    template <ReadableView Packet> static HttpMethod method(Packet packet) {
         return HttpMethod::fromString(
             packet.substr(0, packet.find_first_of(' ')));
     }
-    template <View Packet> static Packet target(Packet packet) {
+    template <ReadableView Packet> static Packet target(Packet packet) {
         std::size_t cursor = 0;
         std::size_t start = exhaust(packet, cursor, 1, ' ');
         std::size_t end = exhaust(packet, cursor, 1, ' ');
         return packet.substr(start, end - start - 1);
     }
-    template <View Packet> static Packet version(Packet packet) {
+    template <ReadableView Packet> static Packet version(Packet packet) {
         std::size_t cursor = 0;
         std::size_t start = exhaust(packet, cursor, 2, ' ');
         std::size_t end = exhaust(packet, cursor, 1, '\r', '\n');
         return packet.substr(start, end - start - 1);
     }
-    template <View Packet>
+    template <ReadableView Packet>
     static std::optional<Packet> header(Packet packet,
                                         std::string_view target) {
         std::size_t cursor = 0;
@@ -93,7 +94,8 @@ class HttpReader {
         return packet.substr(start,
                              exhaust(packet, cursor, 1, '\r') - start - 1);
     }
-    template <View Packet> static std::string_view contents(Packet packet) {
+    template <ReadableView Packet>
+    static Packet contents(Packet packet) {
         std::size_t cursor = 0;
         int s = 0;
         int e = 0;

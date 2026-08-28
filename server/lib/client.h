@@ -1,4 +1,5 @@
 #pragma once
+#include "logger.h"
 #include "server_types.h"
 #include "servercache.h"
 #include <alloca.h>
@@ -39,7 +40,8 @@ class Client {
   public:
     struct flush {};
     static flush flush;
-    Client(FD_T file_descriptor, int timeout = 5000)
+    Client(FD_T file_descriptor,
+           int timeout = 60'000) // TODO: use std::chrono::seconds
         : file_descriptor(file_descriptor) {
         log_header = std::format("Client; fd:{}", file_descriptor);
         last_packet_timestamp = clock::now();
@@ -75,9 +77,7 @@ class Client {
     ssize_t readv(iovec *buffers, std::size_t buffer_c) {
         return ::readv(file_descriptor, buffers, buffer_c);
     }
-    FD_T fd() {
-        return file_descriptor;
-    }
+    FD_T fd() { return file_descriptor; }
 
     template <std::size_t s>
     ServerCache<s>::Node &read(std::string_view key, ServerCache<s> *cache) {
@@ -92,10 +92,12 @@ class Client {
     std::string peek_available() const;
     ssize_t available() const;
     void write(packet_t);
-    void write_http(std::string_view response_type, packet_t contents);
+    void write_http(std::string_view response_type, packet_t contents,
+                    bool keep_alive = false);
     void write_http_header(std::string_view response_type, std::size_t length);
     void write_http_ok(packet_t contents) { write_http("200 OK", contents); }
     bool wait_for_data(int timeout) const;
+    void update_timer() { last_packet_timestamp = clock::now(); }
     bool stale() const {
         return (clock::now() - last_packet_timestamp) > timeout;
     };
@@ -104,7 +106,7 @@ class Client {
         pollfd pfd{};
         pfd.fd = file_descriptor;
         pfd.events = POLLRDHUP;
-        return ::poll(&pfd, 1, 0); 
+        return ::poll(&pfd, 1, 0);
     }
     // everything after this is unsafe; no flush = maybe big crash
     friend Client &operator<<(Client &c, packet_t packet) {
@@ -116,7 +118,8 @@ class Client {
     }
     friend void operator<<(Client &c, struct flush) {
         // TODO: handle IOV_MAX
-        ssize_t written = ::writev(c.file_descriptor, c.write_buffer.data(), c.write_buffer.size());
+        ssize_t written = ::writev(c.file_descriptor, c.write_buffer.data(),
+                                   c.write_buffer.size());
         c.write_buffer.clear();
     }
 };

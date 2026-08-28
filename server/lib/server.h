@@ -7,6 +7,7 @@
 #include "threadpool.h"
 #include <cassert>
 #include <csignal>
+#include <fstream>
 #include <functional>
 #include <future>
 #include <memory>
@@ -38,13 +39,15 @@ class ServerBase {
 
 class Server : private ServerBase {
     using Cache_t = ServerCache<100>;
+
   public:
     using packet = Cache_t::NodeView;
 
   private:
     using ServerResponse = std::function<void(Client &, packet)>;
 
-    using Predicate = std::function<bool(packet)>;
+    using Predicate = std::function<bool(packet)>; // TODO : im lazy asf so
+                                                   // change this to packet&
     struct ServerRoute {
         Predicate predicate;
         ServerResponse response;

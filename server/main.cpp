@@ -1,4 +1,5 @@
 #include "lib/client.h"
+#include "lib/filemanager.h"
 #include "lib/http.h"
 #include "lib/server.h"
 #include <cassert>
@@ -10,8 +11,8 @@
 
 int main(int argc, char **argv) {
     Server server{static_cast<unsigned int>(80)};
-    const std::filesystem::path observed_directory{
-        "./observed"}; // TODO : Add str var
+    const std::filesystem::path observed_directory{"./observed"};
+    FileManager fman{std::move(observed_directory)};
     assert(std::filesystem::is_directory(observed_directory));
     server.start(10);
     server
@@ -37,37 +38,32 @@ int main(int argc, char **argv) {
             })
         .on(http::HttpMethod::GET, "/hierarchy",
             [&](Client &c, Server::packet) {
-                std::stringstream stream;
-                for (auto &object :
-                     std::filesystem::recursive_directory_iterator(
-                         observed_directory)) {
-                    stream << object.path().generic_string().erase(
-                                  0, observed_directory.generic_string().size())
-                           << "\r\n";
-                }
-                c.write_http_ok(stream.str());
+                c.write_http_ok(fman.hierarchy_display());
             })
         .on_predicate(
             [&](Server::packet packet) {
-                std::filesystem::path p =
-                    observed_directory /
-                    http::HttpReader::target(packet).substr(
-                        1); 
-                return std::filesystem::exists(p) &&
-                       std::filesystem::is_regular_file(p) &&
-                       http::HttpReader::method(packet) ==
+                return http::HttpReader::method(packet) ==
                            http::HttpMethod::GET &&
-                       !std::filesystem::canonical(p)
-                            .lexically_relative(
-                                std::filesystem::canonical(observed_directory))
-                            .generic_string()
-                            .starts_with("..");
+                       fman.exist_within_subfilesystem(
+                           http::HttpReader::target(packet));
             },
-            [&](Client &c, Server::packet request) {
-                std::filesystem::path path =
-                    observed_directory /
-                    http::HttpReader::target(request).substr(1);
-                c.sendfile(path);
+            [&](Client &c, Server::packet packet) {
+                c.sendfile(
+                    fman.get_full_path(http::HttpReader::target(packet)));
+            })
+        .on_predicate(
+            [&](Server::packet packet) {
+                return http::HttpReader::method(packet) ==
+                       http::HttpMethod::POST;
+            },
+            [&](Client &c, Server::packet packet) {
+                std::filesystem::path path = http::HttpReader::target(packet);
+                bool exists = fman.exist_within_subfilesystem(path);
+                if (exists)
+                    c.write_http("200 OK", "");
+                else
+                    c.write_http("201 Created", "");
+                fman.write(path, http::HttpReader::contents(packet));
             })
         .on_default([](Client &c, Server::packet) {
             c.write_http("404 Not Found", "Unknown page");

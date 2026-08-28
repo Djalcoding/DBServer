@@ -1,4 +1,5 @@
 #include "client.h"
+#include "http.h"
 #include "logger.h"
 #include <stdexcept>
 #include <string>
@@ -42,7 +43,7 @@ ssize_t Client::read_n(ssize_t n, byte_t *buffer) {
     if (out == -1) {
         throw std::runtime_error("could not read file descriptor");
     } else if (out != 0)
-        last_packet_timestamp = clock::now();
+        update_timer();
 
     return out;
 }
@@ -97,22 +98,20 @@ void Client::write(std::string_view input) {
         }
         Logger::getInstance()->push(
             {log_header, std::format("sent {} byte packet", w, input.size())});
+        update_timer();
     }
 }
 
 void Client::write_http_header(std::string_view response_type,
                                std::size_t length) {
-    *this << "HTTP/1.1 " << response_type << "\r\n"
-          << "Content-Length: " << std::to_string(length) << "\r\n"
-          << "Connection : close\r\n"
-          << "\r\n"
-          << Client::flush;
+    *this << "HTTP/1.1 " << response_type << RN
+          << "Content-Length: " << std::to_string(length) << RN
+          << "Connection : close" << RN << RN << Client::flush;
 }
 void Client::write_http(std::string_view response_type,
-                        std::string_view contents) {
+                        std::string_view contents, bool keep_alive) {
     *this << "HTTP/1.1 " << response_type << "\r\n"
-          << "Content-Length: " << std::to_string(contents.size()) << "\r\n"
-          << "Connection : close\r\n"
-          << "\r\n"
-          << contents << Client::flush;
+          << "Content-Length: " << std::to_string(contents.size()) << RN
+          << "Connection : " << (keep_alive ? "keep-alive" : "close") << RN
+          << RN << contents << Client::flush;
 }

@@ -5,7 +5,6 @@
 #include <chrono>
 #include <cstring>
 #include <format>
-#include <ios>
 #include <thread>
 #include <unistd.h>
 #define TRIAL_COUNT 5
@@ -85,21 +84,20 @@ Server &Server::on_default(ServerResponse response) {
     return *this;
 }
 
-#define close_client ;
-#define keep_client_alive ;
 bool Server::accept_clients(int timeout) {
     if (std::optional<Client> client = ServerBase::accept(timeout)) {
         Logger::getInstance()->push(
             {"[TCP]", std::format("new connection on file descriptor {}",
                                   client->fd())});
         connection_count++;
-        return pool.execute(std::packaged_task<void()>(
-            [this, id = connection_count, client = std::move(*client)]() mutable {
-                std::string process_name =
-                    std::format("Process {}", id);
-                while (!client.stale()) {
-                    if (!client.wait_for_data(100))
+        return pool.execute(
+            std::packaged_task<void()>([this, id = connection_count,
+                                        client = std::move(*client)]() mutable {
+                std::string process_name = std::format("Process {}", id);
+                while (!client.stale() && !client.peer_closed()) {
+                    if (!client.wait_for_data(100)) {
                         continue;
+                    }
                     packet request = client.read(process_name, getCache());
                     bool terminate_TCP = true;
                     if (auto connection_type =
@@ -110,7 +108,8 @@ bool Server::accept_clients(int timeout) {
                     for (auto &route : routes) {
                         if (route.predicate(request)) {
                             use_default_response = false;
-                            if(client.peer_closed()) break;
+                            if (client.peer_closed())
+                                break;
                             route.response(client, request);
                             break;
                         }
