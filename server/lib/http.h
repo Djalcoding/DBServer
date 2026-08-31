@@ -1,23 +1,26 @@
-#include "client.h"
-#include "filereader.h"
-#include "utils.h"
+#pragma once
+#include "servercache.h"
+#include <optional>
 #include <string_view>
 #include <sys/types.h>
-#pragma once
 
 #define RN "\r\n"
 namespace http {
 template <class V>
 concept ReadableView =
     (is_node_view<V>::value || std::same_as<std::string_view, V>);
+template <class T>
+concept UnsliceableReadableView =
+    ReadableView<T> || std::convertible_to<T, std::string_view>;
 using packet = const std::string_view;
 
 struct HttpMethod {
-    enum Value { GET = 0, POST = 1, PUT = 2 };
+    enum Value { GET = 0, POST = 1, PUT = 2, CONNECT = 3 };
 
   private:
-    constexpr static std::size_t count = 3;
-    static constexpr const char *names[count] = {"GET", "POST", "PUT"};
+    constexpr static std::size_t count = 4;
+    static constexpr const char *names[count] = {"GET", "POST", "PUT",
+                                                 "CONNECT"};
     Value v;
 
   public:
@@ -43,9 +46,10 @@ struct HttpMethod {
         throw std::invalid_argument("Non-existant name");
     }
 };
-// TODO re-add GET macro
 
 class HttpReader {
+    // make http reader not parse multiple times (so an actual datatype, lazily
+    // evaluated)
     using http_packet_t = packet;
 
     template <ReadableView Packet, class... Args>
@@ -94,8 +98,7 @@ class HttpReader {
         return packet.substr(start,
                              exhaust(packet, cursor, 1, '\r') - start - 1);
     }
-    template <ReadableView Packet>
-    static Packet contents(Packet packet) {
+    template <ReadableView Packet> static Packet contents(Packet packet) {
         std::size_t cursor = 0;
         int s = 0;
         int e = 0;
@@ -107,9 +110,28 @@ class HttpReader {
     }
 };
 
-inline FileReader send_file(const std::filesystem::path &path, Client &client) {
-    FileReader reader{path};
-    client.write_http_ok(reader.get_contents());
-    return reader;
-}
+template <ReadableView Packet> struct HttpRequest {
+    const HttpMethod method;
+    const Packet target;
+    const Packet version;
+    const Packet contents;
+    const Packet raw_data;
+    const std::optional<Packet> authorization;
+
+    HttpRequest(Packet packet)
+        : raw_data(packet), method(HttpReader::method(packet)),
+          target(HttpReader::target(packet)),
+          version(HttpReader::version(packet)),
+          contents(HttpReader::contents(packet)),
+          authorization(header("Authorization")) {}
+
+    std::optional<const Packet> header(std::string_view name) {
+        return HttpReader::header(
+            raw_data,
+            name); // I don't think caching here will have any real benefit
+    }
+
+    bool is(HttpMethod method) { return this->method == method; }
+};
+
 } // namespace http

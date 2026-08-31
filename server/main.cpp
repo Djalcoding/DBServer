@@ -12,61 +12,80 @@
 int main(int argc, char **argv) {
     Server server{static_cast<unsigned int>(80)};
     const std::filesystem::path observed_directory{"./observed"};
+
+    Server::Authorization refuse_all = [](auto) { return false; };
     FileManager fman{std::move(observed_directory)};
-    assert(std::filesystem::is_directory(observed_directory));
+
+    static constexpr std::string HIERARCHY_ENDPOINT = "/hierarchy";
+    using http::HttpReader;
+    using http::HttpMethod::CONNECT;
+    using http::HttpMethod::GET;
+    using http::HttpMethod::POST;
+
     server.start(10);
-    server
-        .on(http::HttpMethod::GET, "/",
-            [](Client &c, Server::packet) { c.write_http_ok("hi"); })
-        .on(http::HttpMethod::GET, "/status",
-            [](Client &c, Server::packet) { c.write_http_ok("Bye"); })
-        .on(http::HttpMethod::GET, "/cache",
-            [&](Client &c, Server::packet) {
+    server.on(
+              GET, "/", RESPOND_WITH(&) { client.write_http_ok("hi"); })
+        .on(
+            GET, "/status", RESPOND_WITH(&) { client.write_http_ok("Bye"); })
+        .on(
+            GET, "/cache",
+            RESPOND_WITH(&) {
                 std::stringstream ss;
                 for (auto c : *server.getCache()) {
-                    ss << std::filesystem::path(c.second->key)
-                              .lexically_relative(observed_directory)
-                              .native()
-                       << " : " << c.second->size << "B \n";
+                    ss << c.second->key << " : " << c.second->size << "B \n";
                 }
-                c.write_http_ok(ss.str());
+                client.write_http_ok(ss.str());
             })
-        .on(http::HttpMethod::GET, "/slow",
-            [](Client &c, Server::packet) {
+        .on(
+            GET, "/slow",
+            RESPOND_WITH(&) {
                 std::this_thread::sleep_for(std::chrono::seconds(10));
-                c.write_http_ok("B y e");
+                client.write_http_ok("B y e");
             })
-        .on(http::HttpMethod::GET, "/hierarchy",
-            [&](Client &c, Server::packet) {
-                c.write_http_ok(fman.hierarchy_display());
-            })
-        .on_predicate(
-            [&](Server::packet packet) {
-                return http::HttpReader::method(packet) ==
-                           http::HttpMethod::GET &&
-                       fman.exist_within_subfilesystem(
-                           http::HttpReader::target(packet));
-            },
-            [&](Client &c, Server::packet packet) {
-                c.sendfile(
-                    fman.get_full_path(http::HttpReader::target(packet)));
+        .on(
+            GET, HIERARCHY_ENDPOINT,
+            RESPOND_WITH(&) {
+                auto cache = server.getCache();
+                if (auto cached_entry = cache->get(HIERARCHY_ENDPOINT)) {
+                    client.write_http_ok(cached_entry.value());
+                } else {
+                    std::string hierarchy_display = fman.hierarchy_display();
+                    client.write_http_ok(hierarchy_display);
+                    cache->push(HIERARCHY_ENDPOINT, hierarchy_display);
+                }
             })
         .on_predicate(
-            [&](Server::packet packet) {
-                return http::HttpReader::method(packet) ==
-                       http::HttpMethod::POST;
+            [&](Server::http_packet &packet) {
+                return packet.is(GET) && packet.target.starts_with("/stream/");
             },
-            [&](Client &c, Server::packet packet) {
-                std::filesystem::path path = http::HttpReader::target(packet);
+            RESPOND_WITH(&){})
+        .on_predicate(
+            [&](Server::http_packet &packet) {
+                return packet.is(GET) &&
+                       fman.exist_within_subfilesystem(packet.target);
+            },
+            RESPOND_WITH(&) {
+                client.sendfile(fman.get_full_path(packet.target));
+            })
+        .on_predicate(
+            [](Server::http_packet &packet) { return packet.is(POST); },
+            RESPOND_WITH(&) {
+                std::filesystem::path path = packet.target;
                 bool exists = fman.exist_within_subfilesystem(path);
                 if (exists)
-                    c.write_http("200 OK", "");
-                else
-                    c.write_http("201 Created", "");
-                fman.write(path, http::HttpReader::contents(packet));
+                    client.write_http("200 OK", "");
+                else {
+                    client.write_http("201 Created", "");
+                    server.getCache()->remove(
+                        HIERARCHY_ENDPOINT); // invalidate cached hierarchy
+                                             // (todo; check if I can just
+                                             // append the new file or if I can
+                                             // just refetch)
+                }
+                fman.write(path, packet.contents);
             })
-        .on_default([](Client &c, Server::packet) {
-            c.write_http("404 Not Found", "Unknown page");
+        .on_default(RESPOND_WITH() {
+            client.write_http("404 Not Found", "Unknown page");
         });
     while (true) {
         server.accept_clients();

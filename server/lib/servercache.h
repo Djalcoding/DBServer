@@ -1,7 +1,6 @@
 // TODO : seperate in files
 
 #pragma once
-#include <atomic>
 #include <bits/xopen_lim.h>
 #include <concepts>
 #include <cstdint>
@@ -9,6 +8,7 @@
 #include <filesystem>
 #include <format>
 #include <functional>
+#include <generator>
 #include <iostream>
 #include <mutex>
 #include <optional>
@@ -20,11 +20,8 @@
 #include <unistd.h>
 #include <unordered_map>
 
-namespace {
 template <class T>
 concept NodeViewConcept = requires { typename T::node_view_tag; };
-
-} // namespace
 template <class T> struct is_node_view : std::false_type {};
 template <NodeViewConcept C> struct is_node_view<C> : std::true_type {};
 // LRU
@@ -149,15 +146,16 @@ class ServerCache {
         Iterator begin() { return Iterator{0, this, this}; }
         // TODO rbegin and rend
 
-      public: // TODO : Change this
         ptr next;
         ptr prev;
         ptr child;
 
         bool has_data = false;
         char data[buffer_size];
-        Node(ptr prev, const std::string &key, ptr next)
-            : prev(prev), key(key), next(next), child(nullptr) {}
+        Node(ptr prev, std::string &&key, ptr next)
+            : prev(prev), key(std::move(key)), next(next), child(nullptr) {
+            key.resize(100);
+        }
 
         /// expand the node and set the has_data flag to false, this should be
         /// paired with removing the key from the map
@@ -268,8 +266,9 @@ class ServerCache {
         NodeView &operator=(const NodeView &view) = default;
         operator std::filesystem::path() const { // TODO : optimize this
             std::filesystem::path p;
-            if(start_it.node == end_it.node) {
-                p = std::string_view(start_it.node->data + start_it.idx, this->size());
+            if (start_it.node == end_it.node) {
+                p = std::string_view(start_it.node->data + start_it.idx,
+                                     this->size());
                 return p;
             }
             Node *curr = start_it.node;
@@ -290,6 +289,25 @@ class ServerCache {
         }
         const Iterator begin() const { return start_it; }
         const Iterator end() const { return end_it; }
+
+        // promise : generated string view data will be alive for the duration
+        // of the programm
+        std::generator<std::string_view> buffers() const {
+            if (start_it.node == end_it.node) {
+                co_yield {start_it.node->data + start_it.idx, length};
+                co_return;
+            }
+            Iterator curr = start_it;
+            co_yield {curr.node->data + start_it.idx,
+                      buffer_size - start_it.idx};
+            curr.move_forward_one();
+            while (curr != end_it) {
+                co_yield {curr.node->data, buffer_size};
+                curr.move_forward_one();
+            }
+            co_yield {curr.node->data, end_it.idx};
+        }
+
         char operator[](std::size_t idx) const {
             if (idx >= length) {
                 throw std::overflow_error(
@@ -299,7 +317,18 @@ class ServerCache {
             return *(start_it + idx);
         };
 
-        NodeView substr(std::size_t start, std::size_t length = SIZE_MAX) {
+        bool empty() const { return size() == 0; }
+        bool starts_with(std::string_view start) const {
+            if(start.size() > size()) return false;
+            for(std::size_t i{0}; i < start.size(); i++) {
+                if(start[i] != (*this)[i]) {
+                    return false;
+                }
+            }
+            return true;
+        };
+
+        NodeView substr(std::size_t start, std::size_t length = SIZE_MAX) const {
             if (start > this->length) {
                 throw std::invalid_argument(
                     "start is greater than full length");
@@ -310,7 +339,7 @@ class ServerCache {
             return NodeView{start_it + start, start_it + start + length,
                             length};
         }
-        std::size_t find_first_of(char target) {
+        std::size_t find_first_of(char target) const {
             std::size_t i{0};
             for (char c : *this) {
                 if (c == target)
@@ -320,7 +349,7 @@ class ServerCache {
             return i;
         }
 
-        bool operator==(std::string_view other) {
+        bool operator==(std::string_view other) const {
             if (length != other.size())
                 return false;
             Iterator s1 = this->begin();
@@ -334,7 +363,7 @@ class ServerCache {
             }
             return true;
         }
-        bool operator==(const NodeView &other) {
+        bool operator==(const NodeView &other) const {
             if (length != other.length)
                 return false;
             Iterator s1 = begin();
@@ -348,9 +377,8 @@ class ServerCache {
             return true;
         }
 
-        friend std::ostream &
-        operator<<(std::ostream &stream,
-                   const NodeView &view) { // TODO : change this
+        friend std::ostream &operator<<(std::ostream &stream,
+                                        const NodeView &view) {
             for (char c : view) {
                 stream << c;
             }
@@ -434,12 +462,11 @@ class ServerCache {
     // returns an optional that may or may not contain a cref to the Node that
     // contains the data stored in key, this operation will push the "key node"
     // to the front of the cache
-    std::optional<std::reference_wrapper<const Node>>
-    get(std::string_view key) { // not thread safe...
+    std::optional<NodeView> get(std::string_view key) {
         lock_t lock(main_mutex);
         if (NodePtr target = at(key)) {
             pushNodeToFront(target);
-            return std::cref(*target);
+            return *target;
         }
         return std::nullopt;
     }
@@ -476,6 +503,7 @@ class ServerCache {
         }
 
         // owning resize
+
         auto [start_node, end] = eject_n(required_nodes(bytes));
         start_node->has_data = true;
         start_node->child = start_node->next;
@@ -497,10 +525,9 @@ class ServerCache {
 
     // writes a copy of "value" to the cache, this is a write operation
     void push(std::string_view key, std::string_view value) {
-        lock_t lock(main_mutex);
         Node &s = ask(key, value.size());
         for (std::size_t i{0}; i < value.size(); i++) {
-            s[i] = value[i];
+            s[i] = value[i]; // TODO: optimize this (buffer per buffer)
         }
     }
 

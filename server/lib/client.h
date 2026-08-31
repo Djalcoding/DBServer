@@ -1,4 +1,5 @@
 #pragma once
+#include "http.h"
 #include "logger.h"
 #include "server_types.h"
 #include "servercache.h"
@@ -22,11 +23,13 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/uio.h>
+#include <type_traits>
 #include <unistd.h>
 #include <vector>
 
+#define PACKET_TEMPLATE template <http::UnsliceableReadableView Packet>
+
 class Client {
-    using packet_t = std::string_view;
     FD_T file_descriptor;
     std::string log_header;
     std::vector<iovec> write_buffer;
@@ -91,11 +94,52 @@ class Client {
     ssize_t peek_n(ssize_t n, byte_t *buffer) const;
     std::string peek_available() const;
     ssize_t available() const;
-    void write(packet_t);
-    void write_http(std::string_view response_type, packet_t contents,
-                    bool keep_alive = false);
-    void write_http_header(std::string_view response_type, std::size_t length);
-    void write_http_ok(packet_t contents) { write_http("200 OK", contents); }
+
+    template <http::UnsliceableReadableView Packet> void write(Packet input) {
+        ssize_t remaining_bytes = input.size();
+        while (remaining_bytes > 0) {
+            int w = ::send(file_descriptor, input.data(), input.size(), 0);
+            if (w == -1) {
+                // TODO: Multiple attempts
+                Logger::getInstance()->push(
+                    {log_header,
+                     std::format(
+                         "Failed in writing {} bytes from packet, {} bytes "
+                         "remaining",
+                         w, remaining_bytes),
+                     Logger::LogLevel::WAR});
+                return;
+            } else {
+                remaining_bytes -= w;
+            }
+            Logger::getInstance()->push(
+                {log_header,
+                 std::format("sent {} byte packet", w, input.size())});
+            update_timer();
+        }
+    }
+
+    void write_http_header(std::string_view response_type, std::size_t length) {
+        *this << "HTTP/1.1 " << response_type << RN
+              << "Content-Length: " << std::to_string(length) << RN
+              << "Connection : close" << RN << RN << Client::flush;
+    }
+    PACKET_TEMPLATE
+    void write_http(std::string_view response_type, Packet contents,
+                    bool keep_alive = false) {
+        *this << "HTTP/1.1 " << response_type << "\r\n"
+              << "Content-Length: ";
+        if constexpr (std::is_pointer_v<Packet>) {
+            *this << std::to_string(std::string_view(contents).size());
+        } else {
+            *this << std::to_string(contents.size());
+        }
+        *this << RN << "Connection : " << (keep_alive ? "keep-alive" : "close")
+              << RN << RN << contents << Client::flush;
+    }
+
+    PACKET_TEMPLATE
+    void write_http_ok(Packet contents) { write_http("200 OK", contents); }
     bool wait_for_data(int timeout) const;
     void update_timer() { last_packet_timestamp = clock::now(); }
     bool stale() const {
@@ -108,14 +152,28 @@ class Client {
         pfd.events = POLLRDHUP;
         return ::poll(&pfd, 1, 0);
     }
+
     // everything after this is unsafe; no flush = maybe big crash
-    friend Client &operator<<(Client &c, packet_t packet) {
+
+    friend Client &operator<<(Client &c, std::string_view packet) {
         if (packet.empty())
             return c;
         c.write_buffer.push_back(
             iovec{const_cast<char *>(packet.data()), packet.size()});
         return c;
     }
+    friend Client &operator<<(Client &c, const char *packet) {
+        return c << std::string_view(packet);
+    }
+    template <NodeViewConcept NodeView>
+    friend Client &operator<<(Client &c, NodeView view) {
+        for (std::string_view buffer : view.buffers()) {
+            c.write_buffer.push_back(
+                {const_cast<char *>(buffer.data()), buffer.size()});
+        }
+        return c;
+    }
+
     friend void operator<<(Client &c, struct flush) {
         // TODO: handle IOV_MAX
         ssize_t written = ::writev(c.file_descriptor, c.write_buffer.data(),
@@ -123,3 +181,4 @@ class Client {
         c.write_buffer.clear();
     }
 };
+#undef PACKET_TEMPLATE

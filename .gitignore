@@ -1,6 +1,7 @@
 /server/observed/
 /serverclient/build/
 
+*.o
 
 ## Pregenerated
 

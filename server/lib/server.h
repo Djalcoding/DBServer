@@ -6,8 +6,6 @@
 #include "servercache.h"
 #include "threadpool.h"
 #include <cassert>
-#include <csignal>
-#include <fstream>
 #include <functional>
 #include <future>
 #include <memory>
@@ -38,50 +36,65 @@ class ServerBase {
 };
 
 class Server : private ServerBase {
-    using Cache_t = ServerCache<100>;
+#define RESPOND_WITH(CAPTURE)                                                  \
+    [CAPTURE](Client & client, Server::http_packet & packet)
+
+    using Cache_t = ServerCache<65536>;
 
   public:
     using packet = Cache_t::NodeView;
+    using http_packet = http::HttpRequest<packet>;
+
+    using Authorization = std::function<bool(std::optional<packet>)>;
+    inline static Authorization any_auth = [](auto) { return true; };
 
   private:
-    using ServerResponse = std::function<void(Client &, packet)>;
+    using ServerResponse = std::function<void(Client &, http_packet &)>;
+    using Predicate = std::function<bool(http_packet &)>;
 
-    using Predicate = std::function<bool(packet)>; // TODO : im lazy asf so
-                                                   // change this to packet&
     struct ServerRoute {
         Predicate predicate;
         ServerResponse response;
-        ServerRoute(Predicate predicate, ServerResponse response)
-            : predicate(std::move(predicate)), response(std::move(response)) {};
+        Authorization &auth;
+        ServerRoute(Predicate predicate, ServerResponse response,
+                    Authorization &auth)
+            : predicate(predicate), response(response), auth(auth) {};
     };
     using ServerRequest = std::shared_ptr<std::packaged_task<void()>>;
-    ServerResponse default_response = [](Client &, packet) {};
+    ServerResponse default_response = [](Client &, http_packet) {};
+    ServerResponse unauthorized_response = [](Client &client, http_packet) {
+        client.write_http("403 Forbidden", "");
+    };
     std::vector<ServerRoute> routes;
-    ThreadPool pool{20};
+    ThreadPool pool{8};
     Cache_t cache;
     unsigned long long connection_count = 0;
 
   public:
-    Server(unsigned int port) : ServerBase(port), cache(100) {};
+    Server(unsigned int port) : ServerBase(port), cache(1000) {};
     void start(unsigned int backlog_size = 10) {
         ServerBase::start(backlog_size);
-        signal(SIGPIPE, SIG_IGN);
     }
     Server &on_default(ServerResponse response);
-    Server &on(const std::string &target, ServerResponse response) {
-        return on(http::HttpMethod::GET, target, response);
+    Server &on_unauthorized(ServerResponse response) {
+        unauthorized_response = response;
+        return *this;
+    }
+    Server &on(const std::string &target, ServerResponse response,
+               Authorization &auth = any_auth) {
+        return on(http::HttpMethod::GET, target, response, auth);
     }
     Server &on(http::HttpMethod method, const std::string &target,
-               ServerResponse response) {
+               ServerResponse response, Authorization &auth = any_auth) {
         return on_predicate(
-            [=](packet packet) {
-                return method == http::HttpReader::method(packet) &&
-                       target == http::HttpReader::target(packet);
+            [=](http_packet packet) {
+                return method == packet.method && target == packet.target;
             },
-            response);
+            response, auth);
     }
-    Server &on_predicate(Predicate pred, ServerResponse response) {
-        routes.push_back({pred, response});
+    Server &on_predicate(Predicate pred, ServerResponse response,
+                         Authorization &auth = any_auth) {
+        routes.push_back({pred, response, auth});
         return *this;
     }
     Cache_t *getCache() { return &cache; }

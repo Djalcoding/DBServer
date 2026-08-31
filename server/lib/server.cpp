@@ -98,30 +98,38 @@ bool Server::accept_clients(int timeout) {
                     if (!client.wait_for_data(100)) {
                         continue;
                     }
-                    packet request = client.read(process_name, getCache());
+                    http_packet request =
+                        packet(client.read(process_name, getCache()));
                     bool terminate_TCP = true;
-                    if (auto connection_type =
-                            http::HttpReader::header(request, "Connection")) {
+                    if (auto connection_type = request.header("Connection")) {
                         terminate_TCP = connection_type.value() == "Close";
                     }
                     bool use_default_response = true;
+                    bool use_unauthorized = false;
                     for (auto &route : routes) {
-                        if (route.predicate(request)) {
-                            use_default_response = false;
-                            if (client.peer_closed())
-                                break;
-                            route.response(client, request);
-                            break;
+                        if (!route.predicate(request)) {
+                            continue;
                         }
+                        use_default_response = false;
+                        if (!route.auth(request.authorization)) {
+                            use_unauthorized = true;
+                            continue;
+                        }
+                        use_unauthorized = false;
+                        if (client.peer_closed())
+                            break;
+                        route.response(client, request);
+                        break;
                     }
-                    if (use_default_response) {
+                    if (use_unauthorized) {
+                        unauthorized_response(client, request);
+                    } else if (use_default_response) {
                         default_response(client, request);
                     }
                     if (terminate_TCP)
                         break;
                 }
                 cache.remove(process_name);
-                std::cout << "Closing client " << client.fd() << '\n';
                 client.close();
             }));
     } else

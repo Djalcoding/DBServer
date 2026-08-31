@@ -1,5 +1,5 @@
+
 #include "client.h"
-#include "http.h"
 #include "logger.h"
 #include <stdexcept>
 #include <string>
@@ -80,38 +80,3 @@ ssize_t Client::available() const {
     return available_bytes;
 }
 
-void Client::write(std::string_view input) {
-    ssize_t remaining_bytes = input.size();
-    while (remaining_bytes > 0) {
-        int w = ::send(file_descriptor, input.data(), input.size(), 0);
-        if (w == -1) {
-            // TODO: Multiple attempts
-            Logger::getInstance()->push(
-                {log_header,
-                 std::format("Failed in writing {} bytes from packet, {} bytes "
-                             "remaining",
-                             w, remaining_bytes),
-                 Logger::LogLevel::WAR});
-            return;
-        } else {
-            remaining_bytes -= w;
-        }
-        Logger::getInstance()->push(
-            {log_header, std::format("sent {} byte packet", w, input.size())});
-        update_timer();
-    }
-}
-
-void Client::write_http_header(std::string_view response_type,
-                               std::size_t length) {
-    *this << "HTTP/1.1 " << response_type << RN
-          << "Content-Length: " << std::to_string(length) << RN
-          << "Connection : close" << RN << RN << Client::flush;
-}
-void Client::write_http(std::string_view response_type,
-                        std::string_view contents, bool keep_alive) {
-    *this << "HTTP/1.1 " << response_type << "\r\n"
-          << "Content-Length: " << std::to_string(contents.size()) << RN
-          << "Connection : " << (keep_alive ? "keep-alive" : "close") << RN
-          << RN << contents << Client::flush;
-}
