@@ -2,6 +2,7 @@
 /serverclient/build/
 
 *.o
+*.exe
 
 ## Pregenerated
 
