@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:serverclient/appinfo.dart';
+import 'package:serverclient/http.dart';
 import 'package:serverclient/network.dart';
 import 'package:serverclient/pages.dart';
 import 'package:serverclient/statusbar.dart';
@@ -70,6 +71,16 @@ class HomePageState extends State<HomePage> {
   void removeScheduledFile(int id) =>
       setState(() => _scheduledFiles.removeAt(id));
   void clearScheduleFiles() => setState(() => _scheduledFiles.clear());
+  void sendFiles() {
+    SimpleHttpRequest httpRequest = SimpleHttpRequest();
+    PlatformFile file = scheduledFiles[0];
+    httpRequest.setType("POST");
+    httpRequest.setTarget(file.name);
+    httpRequest.setVersion("HTTP/1.1");
+    httpRequest.setContents(file.bytes!);
+    httpRequest.setHeader(name: "Connection", value: "keep-alive");
+    pipe.writeHttp(httpRequest);
+  }
 
   bool get isEnglish => _isEnglish;
   bool get isDarkTheme => _themeNotifier.value == ThemeMode.dark;

@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:serverclient/http.dart';
 import 'package:serverclient/statusbar.dart';
 
 typedef ConnectivityListener = void Function(ConnectivityStatus newStatus);
@@ -14,7 +16,6 @@ class ServerPipe {
   String? host;
   int? port;
 
-  String _authorization = "";
   final List<ConnectivityListener> _connectivityListeners = [];
 
   Future<void> connect({required String host, required int port}) async {
@@ -56,23 +57,23 @@ class ServerPipe {
     _connectivityListeners.add(callback);
   }
 
-  void write(String data) {
+  void write(Uint8List data) {
     if (socket == null) throw Exception("Socket isn't connected");
     socket!.write(data);
+  }
+
+  void writeHttp(SimpleHttpRequest request) {
+    write(request.toBytes());
   }
 
   void httpGET(String url, {bool keepAlive = false}) {
     String requestLine = "GET $url HTTP/1.1";
     String hostHTTP = "HOST: $host:$port";
     String connection = "Connection: ${keepAlive ? "keep-alive" : "close"}";
-    write("$requestLine\r\n$hostHTTP\r\n$connection\r\n");
+    write(utf8.encode("$requestLine\r\n$hostHTTP\r\n$connection\r\n"));
   }
 
   void drop() async {
     await socket!.close();
-  }
-
-  void setAuthorization(String data) {
-    _authorization = data;
   }
 }

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 Future<List<PlatformFile>?> getReceivedFiles() async {
   FilePickerResult? result = await FilePicker.platform.pickFiles(
     allowMultiple: true,
+    withData: true
   );
   return result?.files;
 }
@@ -98,31 +99,3 @@ class FileCard extends StatelessWidget {
   }
 }
 
-Widget buildSendFileButton(ThemeData theme, void Function() onPressed) {
-  return TextButton(
-    onPressed: onPressed,
-    style: ButtonStyle(
-      splashFactory: NoSplash.splashFactory,
-      padding: WidgetStatePropertyAll(EdgeInsetsGeometry.all(10)),
-      shape: WidgetStatePropertyAll(
-        RoundedRectangleBorder(
-          side: BorderSide(color: theme.colorScheme.primary, width: 4),
-          borderRadius: BorderRadiusGeometry.all(Radius.circular(10)),
-        ),
-      ),
-    ),
-    child: Padding(
-      padding: EdgeInsetsGeometry.all(10),
-      child: Column(
-        children: [
-          Icon(
-            Icons.file_upload_outlined,
-            size: 200,
-            color: theme.colorScheme.primary,
-          ),
-          Text("click to add a file"),
-        ],
-      ),
-    ),
-  );
-}
