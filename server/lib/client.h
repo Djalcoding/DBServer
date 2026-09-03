@@ -29,6 +29,8 @@
 
 #define PACKET_TEMPLATE template <http::UnsliceableReadableView Packet>
 
+enum class ClientStatus { DATA_AVAILABLE, NO_DATA, PEER_CLOSED, CLIENT_ERROR };
+
 class Client {
     FD_T file_descriptor;
     std::string log_header;
@@ -44,7 +46,11 @@ class Client {
     struct flush {};
     static flush flush;
     Client(FD_T file_descriptor,
-           int timeout = 60'000) // TODO: use std::chrono::seconds
+#ifndef _DEBUG_
+           int timeout = 60'000)
+#else
+           int timeout = 999'999'999)
+#endif
         : file_descriptor(file_descriptor) {
         log_header = std::format("Client; fd:{}", file_descriptor);
         last_packet_timestamp = clock::now();
@@ -83,12 +89,16 @@ class Client {
     FD_T fd() { return file_descriptor; }
 
     template <std::size_t s>
-    ServerCache<s>::Node &read(std::string_view key, ServerCache<s> *cache) {
+    ServerCache<s>::Node *read(std::string_view key, ServerCache<s> *cache) {
         last_packet_timestamp = clock::now();
-        auto &buf = cache->ask(key, available());
-        ::iovec *b = new iovec[buf.owned()]; // TODO : handle zeroes
-        buf.iovec(b);
-        readv(b, buf.owned());
+        ssize_t available_bytes = available();
+        typename ServerCache<s>::Node *buf = cache->ask(key, available_bytes);
+        if (available_bytes == 0) {
+            return buf;
+        }
+        ::iovec *b = new iovec[buf->owned()]; // TODO : handle zeroes
+        buf->iovec(b);
+        readv(b, buf->owned());
         return buf;
     }
     ssize_t peek_n(ssize_t n, byte_t *buffer) const;
@@ -140,7 +150,7 @@ class Client {
 
     PACKET_TEMPLATE
     void write_http_ok(Packet contents) { write_http("200 OK", contents); }
-    bool wait_for_data(int timeout) const;
+    ClientStatus poll(int timeout) const;
     void update_timer() { last_packet_timestamp = clock::now(); }
     bool stale() const {
         return (clock::now() - last_packet_timestamp) > timeout;

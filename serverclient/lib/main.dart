@@ -71,7 +71,8 @@ class HomePageState extends State<HomePage> {
   void removeScheduledFile(int id) =>
       setState(() => _scheduledFiles.removeAt(id));
   void clearScheduleFiles() => setState(() => _scheduledFiles.clear());
-  void sendFiles() {
+  void sendScheduledFiles() {
+    print("Sending files !");
     SimpleHttpRequest httpRequest = SimpleHttpRequest();
     PlatformFile file = scheduledFiles[0];
     httpRequest.setType("POST");

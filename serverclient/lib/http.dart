@@ -30,7 +30,7 @@ class SimpleHttpRequest {
   }
 
   SimpleHttpRequest setHeader({required String name, required String value}) {
-      headers[name] = value;
+    headers[name] = value;
     return this;
   }
 
@@ -42,7 +42,7 @@ class SimpleHttpRequest {
     final headerBytes = utf8.encode(header.toString());
 
     if (contents == null || contents!.isEmpty) {
-        return Uint8List.fromList(headerBytes);
+      return Uint8List.fromList(headerBytes);
     }
     return Uint8List.fromList([...headerBytes, ...contents!]);
   }

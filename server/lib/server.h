@@ -37,7 +37,7 @@ class ServerBase {
 
 class Server : private ServerBase {
 #define RESPOND_WITH(CAPTURE)                                                  \
-    [CAPTURE](Client & client, Server::http_packet & packet)
+    [CAPTURE](Client & client, const Server::http_packet & packet)
 
     using Cache_t = ServerCache<65536>;
 
@@ -49,8 +49,8 @@ class Server : private ServerBase {
     inline static Authorization any_auth = [](auto) { return true; };
 
   private:
-    using ServerResponse = std::function<void(Client &, http_packet &)>;
-    using Predicate = std::function<bool(http_packet &)>;
+    using ServerResponse = std::function<void(Client &, const http_packet &)>;
+    using Predicate = std::function<bool(const http_packet &)>;
 
     struct ServerRoute {
         Predicate predicate;
@@ -99,4 +99,7 @@ class Server : private ServerBase {
     }
     Cache_t *getCache() { return &cache; }
     bool accept_clients(int timeout = 10);
+
+  private:
+    bool handle_http_request(Client& client,const http_packet &request);
 };

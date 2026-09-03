@@ -84,50 +84,71 @@ Server &Server::on_default(ServerResponse response) {
     return *this;
 }
 
+// returns true if client should be kept alive
+bool Server::handle_http_request(Client &client, const http_packet &request) {
+    std::cout << "RAW : " << request.raw_data << " Method : " << request.method.toString() << " Ill ? "
+              << request.ill_formed() << '\n';
+    if (request.ill_formed())
+        return false;
+    bool terminate_TCP = true;
+    if (auto connection_type = request.header("Connection")) {
+        terminate_TCP = connection_type.value() == "Close";
+    }
+    bool use_default_response = true;
+    bool use_unauthorized = false;
+    for (auto &route : routes) {
+        if (!route.predicate(request)) {
+            continue;
+        }
+        use_default_response = false;
+        if (!route.auth(request.authorization)) {
+            use_unauthorized = true;
+            continue;
+        }
+        use_unauthorized = false;
+        if (client.peer_closed())
+            return false;
+        route.response(client, request);
+        break;
+    }
+    if (use_unauthorized) {
+        unauthorized_response(client, request);
+    } else if (use_default_response) {
+        default_response(client, request);
+    }
+    return !terminate_TCP;
+}
+
 bool Server::accept_clients(int timeout) {
     if (std::optional<Client> client = ServerBase::accept(timeout)) {
         Logger::getInstance()->push(
-            {"[TCP]", std::format("new connection on file descriptor {}",
-                                  client->fd())});
+            {"TCP", std::format("new connection on file descriptor {}",
+                                client->fd())});
         connection_count++;
         return pool.execute(
             std::packaged_task<void()>([this, id = connection_count,
                                         client = std::move(*client)]() mutable {
                 std::string process_name = std::format("Process {}", id);
-                while (!client.stale() && !client.peer_closed()) {
-                    if (!client.wait_for_data(100)) {
-                        continue;
-                    }
-                    http_packet request =
-                        packet(client.read(process_name, getCache()));
-                    bool terminate_TCP = true;
-                    if (auto connection_type = request.header("Connection")) {
-                        terminate_TCP = connection_type.value() == "Close";
-                    }
-                    bool use_default_response = true;
-                    bool use_unauthorized = false;
-                    for (auto &route : routes) {
-                        if (!route.predicate(request)) {
-                            continue;
-                        }
-                        use_default_response = false;
-                        if (!route.auth(request.authorization)) {
-                            use_unauthorized = true;
-                            continue;
-                        }
-                        use_unauthorized = false;
-                        if (client.peer_closed())
-                            break;
-                        route.response(client, request);
+                while (!client.stale()) {
+                    ClientStatus status = client.poll(100);
+                    bool terminate_TCP = false;
+                    switch (status) {
+                    case ClientStatus::DATA_AVAILABLE:
                         break;
-                    }
-                    if (use_unauthorized) {
-                        unauthorized_response(client, request);
-                    } else if (use_default_response) {
-                        default_response(client, request);
+                    case ClientStatus::NO_DATA:
+                        continue;
+                    case ClientStatus::CLIENT_ERROR:
+                    case ClientStatus::PEER_CLOSED:
+                        terminate_TCP = true;
+                        break;
                     }
                     if (terminate_TCP)
                         break;
+                    http_packet request =
+                        packet(*client.read(process_name, getCache()));
+                    if (!handle_http_request(client, request)) {
+                        break;
+                    }
                 }
                 cache.remove(process_name);
                 client.close();

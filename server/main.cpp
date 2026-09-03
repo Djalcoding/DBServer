@@ -1,3 +1,5 @@
+#define _DEBUG_
+
 #include "lib/client.h"
 #include "lib/filemanager.h"
 #include "lib/http.h"
@@ -55,12 +57,12 @@ int main(int argc, char **argv) {
                 }
             })
         .on_predicate(
-            [&](Server::http_packet &packet) {
+            [&](const Server::http_packet &packet) {
                 return packet.is(GET) && packet.target.starts_with("/stream/");
             },
             RESPOND_WITH(&){})
         .on_predicate(
-            [&](Server::http_packet &packet) {
+            [&](const Server::http_packet &packet) {
                 return packet.is(GET) &&
                        fman.exist_within_subfilesystem(packet.target);
             },
@@ -68,7 +70,7 @@ int main(int argc, char **argv) {
                 client.sendfile(fman.get_full_path(packet.target));
             })
         .on_predicate(
-            [](Server::http_packet &packet) { return packet.is(POST); },
+            [](const Server::http_packet &packet) { return packet.is(POST); },
             RESPOND_WITH(&) {
                 std::filesystem::path path = packet.target;
                 bool exists = fman.exist_within_subfilesystem(path);

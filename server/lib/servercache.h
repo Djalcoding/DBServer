@@ -319,16 +319,18 @@ class ServerCache {
 
         bool empty() const { return size() == 0; }
         bool starts_with(std::string_view start) const {
-            if(start.size() > size()) return false;
-            for(std::size_t i{0}; i < start.size(); i++) {
-                if(start[i] != (*this)[i]) {
+            if (start.size() > size())
+                return false;
+            for (std::size_t i{0}; i < start.size(); i++) {
+                if (start[i] != (*this)[i]) {
                     return false;
                 }
             }
             return true;
         };
 
-        NodeView substr(std::size_t start, std::size_t length = SIZE_MAX) const {
+        NodeView substr(std::size_t start,
+                        std::size_t length = SIZE_MAX) const {
             if (start > this->length) {
                 throw std::invalid_argument(
                     "start is greater than full length");
@@ -477,12 +479,14 @@ class ServerCache {
     template <class T>
         requires std::constructible_from<std::string, T> &&
                  std::convertible_to<T, std::string_view>
-    Node &ask(T key, std::size_t bytes) {
+    Node *ask(T key, std::size_t bytes) {
+        if (bytes == 0)
+            return nullptr;
         lock_t lock(main_mutex);
         if (NodePtr keyNode = at(static_cast<std::string_view>(key))) {
             if (keyNode->real_size() >= bytes) { // inplace resize
                 keyNode->size = std::max(keyNode->size, bytes);
-                return *keyNode;
+                return keyNode;
             }
             long long remaining = bytes - keyNode->real_size();
             NodePtr end = tail;
@@ -499,11 +503,10 @@ class ServerCache {
             }
 
             keyNode->size = bytes;
-            return *keyNode;
+            return keyNode;
         }
 
         // owning resize
-
         auto [start_node, end] = eject_n(required_nodes(bytes));
         start_node->has_data = true;
         start_node->child = start_node->next;
@@ -517,7 +520,7 @@ class ServerCache {
         pushNodeToFront(start_node);
         start_node->key = key;
         map[static_cast<std::string>(key)] = start_node;
-        return *start_node;
+        return start_node;
     }
     std::size_t required_nodes(std::size_t bytes) {
         return (bytes / buffer_size) + (bytes % buffer_size != 0);
@@ -525,9 +528,9 @@ class ServerCache {
 
     // writes a copy of "value" to the cache, this is a write operation
     void push(std::string_view key, std::string_view value) {
-        Node &s = ask(key, value.size());
+        NodePtr s = ask(key, value.size());
         for (std::size_t i{0}; i < value.size(); i++) {
-            s[i] = value[i]; // TODO: optimize this (buffer per buffer)
+            (*s)[i] = value[i]; // TODO: optimize this (buffer per buffer)
         }
     }
 

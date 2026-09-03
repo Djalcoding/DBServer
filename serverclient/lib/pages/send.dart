@@ -141,7 +141,7 @@ Widget sendFilesPage(HomePageState state) {
       }),
       SizedBox(height: 30),
       Expanded(child: _buildFileList(state)),
-      _buildSendButton(state.scheduledFiles.isNotEmpty ? () {state.sendFiles();} : null),
+      _buildSendButton(state.scheduledFiles.isNotEmpty ? () {state.sendScheduledFiles();} : null),
     ],
   );
 }

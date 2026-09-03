@@ -3,6 +3,7 @@
 #include "logger.h"
 #include <stdexcept>
 #include <string>
+#include <sys/poll.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/uio.h>
@@ -48,11 +49,17 @@ ssize_t Client::read_n(ssize_t n, byte_t *buffer) {
     return out;
 }
 
-bool Client::wait_for_data(int timeout) const {
+ClientStatus Client::poll(int timeout) const {
     pollfd pfd{};
     pfd.fd = file_descriptor;
-    pfd.events = POLLIN;
-    return ::poll(&pfd, 1, timeout) > 0;
+    pfd.events = POLLIN | POLLRDHUP;
+    int output = ::poll(&pfd, 1, timeout);
+    if (output < 0)
+        return ClientStatus::CLIENT_ERROR;
+    if ((pfd.revents & POLLRDHUP) != 0)
+        return ClientStatus::PEER_CLOSED;
+    return pfd.revents == 1 ? ClientStatus::DATA_AVAILABLE
+                            : ClientStatus::NO_DATA;
 }
 std::string Client::peek_available() const {
     ssize_t available_bytes = available();
@@ -71,6 +78,7 @@ ssize_t Client::peek_n(ssize_t n, byte_t *buffer) const {
 }
 
 void Client::close() {
+    Logger::getInstance()->push({"Client", std::format("Closing fd {}", fd())});
     ::shutdown(file_descriptor, SHUT_WR);
     ::close(file_descriptor);
 }
@@ -79,4 +87,3 @@ ssize_t Client::available() const {
     ioctl(file_descriptor, FIONREAD, &available_bytes);
     return available_bytes;
 }
-

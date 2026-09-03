@@ -15,7 +15,7 @@ concept UnsliceableReadableView =
 using packet = const std::string_view;
 
 struct HttpMethod {
-    enum Value { GET = 0, POST = 1, PUT = 2, CONNECT = 3 };
+    enum Value { GET = 0, POST = 1, PUT = 2, CONNECT = 3, INVALID = 255 };
 
   private:
     constexpr static std::size_t count = 4;
@@ -35,7 +35,11 @@ struct HttpMethod {
     constexpr bool operator!=(const HttpMethod &other) const {
         return other.v != this->v;
     }
-    constexpr const char *toString() const { return names[v]; }
+    constexpr const char *toString() const {
+        if (v == INVALID)
+            return "INVALID";
+        return names[v];
+    }
 
     template <ReadableView V> static constexpr HttpMethod fromString(V v) {
         for (std::size_t i{0}; i < count; i++) {
@@ -43,7 +47,7 @@ struct HttpMethod {
                 return Value(i);
             }
         }
-        throw std::invalid_argument("Non-existant name");
+        return INVALID;
     }
 };
 
@@ -118,20 +122,29 @@ template <ReadableView Packet> struct HttpRequest {
     const Packet raw_data;
     const std::optional<Packet> authorization;
 
+  private:
+    bool ill = false;
+
+  public:
     HttpRequest(Packet packet)
         : raw_data(packet), method(HttpReader::method(packet)),
           target(HttpReader::target(packet)),
           version(HttpReader::version(packet)),
           contents(HttpReader::contents(packet)),
-          authorization(header("Authorization")) {}
+          authorization(header("Authorization")) {
+        if (method == HttpMethod::INVALID || !target.starts_with("/") ||
+            !version.starts_with("HTTP/"))
+            ill = true;
+    }
 
-    std::optional<const Packet> header(std::string_view name) {
+    std::optional<const Packet> header(std::string_view name) const {
         return HttpReader::header(
             raw_data,
             name); // I don't think caching here will have any real benefit
     }
 
-    bool is(HttpMethod method) { return this->method == method; }
+    bool is(HttpMethod method) const { return this->method == method; }
+    bool ill_formed() const { return ill; }
 };
 
 } // namespace http

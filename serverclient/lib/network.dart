@@ -19,6 +19,10 @@ class ServerPipe {
   final List<ConnectivityListener> _connectivityListeners = [];
 
   Future<void> connect({required String host, required int port}) async {
+    if (_connectivityStatus == ConnectivityStatus.connected) {
+      socket?.close();
+      _setConnectivity(ConnectivityStatus.disconnected);
+    }
     _setConnectivity(ConnectivityStatus.connecting);
     try {
       socket = await Socket.connect(host, port);
@@ -59,7 +63,8 @@ class ServerPipe {
 
   void write(Uint8List data) {
     if (socket == null) throw Exception("Socket isn't connected");
-    socket!.write(data);
+    print("DATA : ${data[0]}");
+    socket!.add(data);
   }
 
   void writeHttp(SimpleHttpRequest request) {
