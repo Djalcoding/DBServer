@@ -92,7 +92,7 @@ enum ServerPage {
                       MediaQuery.of(context).size.width,
                       MediaQuery.of(context).size.height,
                     ) /
-                    1.5,
+                    1.75,
                 color: Colors.deepOrange,
               ),
           ],
