@@ -12,6 +12,8 @@ Widget connectPage(HomePageState state) {
       ),
       SizedBox(height: 30),
       buildHostInput(state),
+      _buildUsernameField(),
+      _buildPasswordFields(passwordCount: 12),
       Expanded(child: SizedBox()),
       Align(alignment: Alignment.bottomCenter, child: connectButton(state)),
     ],
@@ -52,26 +54,127 @@ Widget buildHostInput(HomePageState state, {double spacing = 20}) {
   );
 }
 
-Widget connectButton(HomePageState state) {
-  return ElevatedButton(
-    style: ButtonStyle(
-      shape: WidgetStatePropertyAll(
-        RoundedRectangleBorder(
-          borderRadius: BorderRadiusGeometry.all(Radius.circular(5)),
-        ),
-      ),
+Widget _buildUsernameField() {
+  return Padding(
+    padding: .symmetric(vertical: 20, horizontal: 20),
+    child: TextFormField(
+      decoration: rectangleDecoration(labelText: "Username"),
+      inputFormatters: [FilteringTextInputFormatter.deny(RegExp(r'\*| '))],
+      maxLength: 25,
     ),
-    onPressed: () {
-      state.pipe.connect(host: state.targetHost, port: state.targetPort);
-    },
-    child: Text("Connect"),
   );
 }
 
-InputDecoration rectangleDecoration({String? labelText, String? hintText}) {
+class PasswordField extends StatelessWidget {
+  final FocusNode? next;
+  final FocusNode curr;
+  final FocusNode? prev;
+  final int id;
+  const PasswordField({
+    super.key,
+    required this.id,
+    required this.next,
+    required this.curr,
+    required this.prev,
+  });
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 165,
+      child: TextFormField(
+        focusNode: curr,
+        onFieldSubmitted: (String s) {
+          next?.requestFocus();
+        },
+        onChanged: (String s) {
+          if (s.isEmpty) {
+            prev?.requestFocus();
+          }
+        },
+        maxLength: 12,
+        decoration: rectangleDecoration(labelText: "Key #$id", counterText: ""),
+      ),
+    );
+  }
+}
+
+Widget _buildPasswordFields({int passwordCount = 12}) {
+  List<FocusNode> nodes = [];
+  for (int i = 0; i < passwordCount; i++) {
+    nodes.add(FocusNode());
+  }
+  List<Widget> fields = [];
+  for (int i = 0; i < passwordCount; i++) {
+    fields.add(
+      SizedBox(
+        width: 165,
+        child: PasswordField(
+          id: i + 1,
+          prev: i == 0 ? null : nodes[i - 1],
+          curr: nodes[i],
+          next: i == passwordCount - 1 ? null : nodes[i + 1],
+        ),
+      ),
+    );
+  }
+
+  return Padding(
+    padding: .symmetric(horizontal: 20),
+    child: Center(
+      child: Wrap(
+        alignment: .center,
+        spacing: 20,
+        runSpacing: 15,
+        children: fields,
+      ),
+    ),
+  );
+}
+
+Widget connectButton(HomePageState state) {
+  return Builder(
+    builder: (BuildContext context) {
+      ThemeData theme = Theme.of(context);
+      return SizedBox(
+        width: 300,
+        child: FittedBox(
+          child: ElevatedButton(
+            style: ButtonStyle(
+              elevation: .all(30),
+              backgroundColor: .fromMap({
+                WidgetState.pressed: Color.fromRGBO(0, 50, 175, 1),
+                WidgetState.hovered: Color.fromRGBO(0, 65, 175, 1),
+                WidgetState.any: Color.fromRGBO(0, 85, 175, 1),
+              }),
+              shadowColor: .all(theme.colorScheme.shadow),
+              splashFactory: NoSplash.splashFactory,
+              shape: WidgetStatePropertyAll(
+                RoundedRectangleBorder(borderRadius: .all(Radius.circular(5))),
+              ),
+            ),
+            onPressed: () {
+              state.pipe.connect(
+                host: state.targetHost,
+                port: state.targetPort,
+              );
+            },
+            child: Text("Connect", style: TextStyle(color: Colors.white)),
+          ),
+        ),
+      );
+    },
+  );
+}
+
+InputDecoration rectangleDecoration({
+  String? labelText,
+  String? hintText,
+  String? counterText,
+}) {
   return InputDecoration(
     hintText: hintText,
     labelText: labelText,
+    counterText: counterText,
     border: OutlineInputBorder(
       borderSide: BorderSide(),
       borderRadius: BorderRadius.all(Radius.circular(8)),

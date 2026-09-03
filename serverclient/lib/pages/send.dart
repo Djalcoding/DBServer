@@ -1,11 +1,14 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:serverclient/filemanagement.dart';
 import 'package:serverclient/main.dart';
 
-Widget buildSendFileZone(void Function() onPressed) {
+Widget _buildSendFileZone(void Function() onPressed) {
   return Builder(
     builder: (BuildContext context) {
       ThemeData theme = Theme.of(context);
+      MediaQueryData media = MediaQuery.of(context);
       return TextButton(
         onPressed: onPressed,
         style: ButtonStyle(
@@ -24,10 +27,13 @@ Widget buildSendFileZone(void Function() onPressed) {
             children: [
               Icon(
                 Icons.file_upload_outlined,
-                size: 200,
+                size: min(200, media.size.height / 2.75),
                 color: theme.colorScheme.primary,
               ),
-              Text("click to add a file"),
+              Text(
+                "click to add a file",
+                style: TextStyle(fontSize: min(30, media.size.height / 20)),
+              ),
             ],
           ),
         ),
@@ -136,12 +142,18 @@ Widget sendFilesPage(HomePageState state) {
     mainAxisAlignment: MainAxisAlignment.start,
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      buildSendFileZone(() async {
+      _buildSendFileZone(() async {
         state.scheduleFiles(await getReceivedFiles());
       }),
       SizedBox(height: 30),
       Expanded(child: _buildFileList(state)),
-      _buildSendButton(state.scheduledFiles.isNotEmpty ? () {state.sendScheduledFiles();} : null),
+      _buildSendButton(
+        state.scheduledFiles.isNotEmpty
+            ? () {
+                state.sendScheduledFiles();
+              }
+            : null,
+      ),
     ],
   );
 }
